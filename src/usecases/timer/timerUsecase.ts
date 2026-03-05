@@ -25,14 +25,95 @@ const labelsFor = (kind: GameKindId) => {
   return { left: "SB", mid: "BB", right: "Ante" };
 };
 
+// Editorが直接参照するので “安全な複製” を返す
+const deepClone = <T,>(v: T): T => {
+  // domain定義がJSONに落ちる前提（現状の構造ならOK）
+  return JSON.parse(JSON.stringify(v)) as T;
+};
+
 export class TimerUsecase {
   private runtime: TimerRuntime;
 
   constructor(
-    private readonly def: TimerDefinition,
+    private def: TimerDefinition,
     private readonly clock: Clock
   ) {
     this.runtime = createInitialRuntime();
+  }
+
+  /**
+   * Editor: 現在の構成（ロード済み or デフォルト）を取得
+   */
+  getDefinition(): TimerDefinition {
+    return deepClone(this.def);
+  }
+
+  /**
+   * Editor: running中は編集不可（参照のみ）
+   */
+  canEditStructure(): boolean {
+    return this.runtime.status !== "running";
+  }
+
+  /**
+   * Editor: 編集した構成を適用
+   * - running中は拒否
+   * - A仕様: 残り時間は「短縮だけ許可」、延長はしない
+   */
+  applyEditedDefinition(next: TimerDefinition): void {
+    if (!this.canEditStructure()) {
+      throw new Error("Timer is running. Structure cannot be applied.");
+    }
+    if (!next.levels || next.levels.length === 0) {
+      throw new Error("TimerDefinition.levels must not be empty.");
+    }
+
+    const oldIndex = this.runtime.levelIndex;
+    const newIndex = Math.min(oldIndex, next.levels.length - 1);
+
+    const oldDuration = this.def.levels[oldIndex]?.durationMs ?? 0;
+    const newDuration = next.levels[newIndex]?.durationMs ?? 0;
+
+    // def 差し替え
+    this.def = deepClone(next);
+
+    // runtime調整
+    if (this.runtime.status === "idle") {
+      this.runtime = {
+        status: "idle",
+        levelIndex: newIndex,
+        endsAtEpochMs: null,
+        remainingMs: null,
+      };
+      return;
+    }
+
+    if (this.runtime.status === "paused") {
+      // A仕様: remaining は短縮のみ（remaining > newDuration のときだけ clamp）
+      const currentRemaining = this.runtime.remainingMs ?? oldDuration;
+      const clamped = currentRemaining > newDuration ? newDuration : currentRemaining;
+
+      this.runtime = {
+        status: "paused",
+        levelIndex: newIndex,
+        endsAtEpochMs: null,
+        remainingMs: clamped,
+      };
+      return;
+    }
+
+    if (this.runtime.status === "finished") {
+      // finishedは編集できる扱い。とりあえず idle に戻して表示を整える
+      this.runtime = {
+        status: "idle",
+        levelIndex: newIndex,
+        endsAtEpochMs: null,
+        remainingMs: null,
+      };
+      return;
+    }
+
+    // running は上で弾いてるので到達しない
   }
 
   /**
@@ -62,8 +143,7 @@ export class TimerUsecase {
     }
 
     if (this.runtime.status === "paused") {
-      const remaining =
-        this.runtime.remainingMs ?? this.currentLevelDurationMs();
+      const remaining = this.runtime.remainingMs ?? this.currentLevelDurationMs();
       this.runtime = {
         ...this.runtime,
         status: "running",
@@ -86,7 +166,6 @@ export class TimerUsecase {
    */
   tick(): void {
     const now = this.clock.nowEpochMs();
-
     if (this.runtime.status !== "running") return;
 
     const remaining = this.computeRemainingMs(now);
@@ -115,7 +194,6 @@ export class TimerUsecase {
   getSnapshot(): TimerSnapshot {
     const now = this.clock.nowEpochMs();
     const remainingMs = this.computeRemainingMs(now);
-
     const current = this.def.levels[this.runtime.levelIndex];
 
     const currentBlinds = GAME_KIND_ORDER.map((kind) => ({
@@ -125,12 +203,9 @@ export class TimerUsecase {
     }));
 
     const nextIndex = this.runtime.levelIndex + 1;
-    const next =
-      nextIndex < this.def.levels.length ? this.def.levels[nextIndex] : null;
+    const next = nextIndex < this.def.levels.length ? this.def.levels[nextIndex] : null;
 
-    const nextLevelText = next
-      ? this.buildNextLevelText(next.blinds)
-      : "（最終レベル）";
+    const nextLevelText = next ? this.buildNextLevelText(next.blinds) : "（最終レベル）";
 
     return {
       title: this.def.title,
@@ -157,7 +232,6 @@ export class TimerUsecase {
     const now = this.clock.nowEpochMs();
     const nextIndex = this.runtime.levelIndex + 1;
     if (nextIndex >= this.def.levels.length) return;
-
     this.applyLevelChange(nextIndex, now);
   }
 
@@ -166,7 +240,6 @@ export class TimerUsecase {
     const now = this.clock.nowEpochMs();
     const prevIndex = this.runtime.levelIndex - 1;
     if (prevIndex < 0) return;
-
     this.applyLevelChange(prevIndex, now);
   }
 
@@ -178,8 +251,7 @@ export class TimerUsecase {
     const duration = this.def.levels[newIndex].durationMs;
 
     // finished中は操作系で戻す想定：idle扱いにして適用
-    const baseStatus =
-      this.runtime.status === "finished" ? "idle" : this.runtime.status;
+    const baseStatus = this.runtime.status === "finished" ? "idle" : this.runtime.status;
 
     if (baseStatus === "running") {
       this.runtime = {
@@ -232,9 +304,7 @@ export class TimerUsecase {
     }
 
     if (this.runtime.status === "paused") {
-      return clampNonNegative(
-        this.runtime.remainingMs ?? this.currentLevelDurationMs()
-      );
+      return clampNonNegative(this.runtime.remainingMs ?? this.currentLevelDurationMs());
     }
 
     if (this.runtime.status === "idle") {

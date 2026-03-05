@@ -1,24 +1,25 @@
 import { SystemClock } from "@/adapters/clock/systemClock";
 import { sampleTimerDefinition } from "@/adapters/mock/sampleTimerDefinition";
+import { LocalStorageStorage } from "@/adapters/storage/localStorageStorage";
+
 import { TimerUsecase } from "@/usecases/timer/timerUsecase";
-import { NoopStorage } from "@/adapters/storage/noopStorage";
-import { ConsoleNotify } from "@/adapters/notifications/consoleNotify";
+import type { StoragePort } from "@/usecases/ports/storage";
 
 export type AppContainer = {
   timerUsecase: TimerUsecase;
-
-  // 空箱（将来差し替え）
-  storage: NoopStorage;
-  notify: ConsoleNotify;
+  storage: StoragePort;
 };
 
-export const createContainer = (): AppContainer => {
+export function createContainer(): AppContainer {
   const clock = new SystemClock();
+
+  // ここは将来: 起動時に保存済み構成を読み込んで def を差し替える余地あり
   const timerUsecase = new TimerUsecase(sampleTimerDefinition, clock);
+
+  const storage: StoragePort = new LocalStorageStorage();
 
   return {
     timerUsecase,
-    storage: new NoopStorage(),
-    notify: new ConsoleNotify(),
+    storage,
   };
-};
+}
