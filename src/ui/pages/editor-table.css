@@ -1,0 +1,157 @@
+.editor-page {
+  padding: 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;
+  color: #111;
+}
+
+.editor-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.editor-sub {
+  font-size: 12px;
+  color: #444;
+  margin-top: 4px;
+}
+
+.box {
+  border: 1px solid #bbb;
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 10px;
+  background: #fff;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid #888;
+  background: #f6f6f6;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  border-color: #b55;
+  background: #fff3f3;
+}
+
+.input {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #888;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.select {
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #888;
+  padding: 0 8px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid #bbb;
+  border-radius: 10px;
+  margin-top: 10px;
+  background: #fff;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+th, td {
+  border-bottom: 1px solid #e1e1e1;
+  padding: 6px 6px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  background: #f3f3f3;
+  z-index: 1;
+  border-bottom: 1px solid #cfcfcf;
+  font-weight: 700;
+}
+
+.col-ops { width: 90px; }
+.col-no  { width: 110px; }
+.col-min { width: 70px; }
+.col-kind { width: 210px; }
+
+.ops {
+  display: flex;
+  gap: 6px;
+}
+
+.ops-btn {
+  width: 40px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #888;
+  background: #f6f6f6;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.ops-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ops-btn-danger {
+  border-color: #b55;
+  background: #fff3f3;
+}
+
+.num {
+  width: 56px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #888;
+  padding: 0 6px;
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.min {
+  width: 54px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #888;
+  padding: 0 6px;
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell3 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}

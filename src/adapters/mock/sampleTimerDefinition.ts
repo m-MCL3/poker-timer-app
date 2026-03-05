@@ -1,7 +1,6 @@
-import { TimerDefinition } from "@/domain/entities/timer";
-import { BlindsByGame } from "@/domain/entities/blinds";
+import type { TimerDefinition, TimerEntry } from "@/domain/entities/timer";
+import type { BlindsByGame } from "@/domain/entities/blinds";
 
-// ---- 仕様書にある形（モック入力） ----
 type RawLevel = {
   durationSec: number;
   blinds: {
@@ -11,19 +10,14 @@ type RawLevel = {
   };
 };
 
-const normalize = (raw: RawLevel): { durationMs: number; blinds: BlindsByGame } => {
-  const b: BlindsByGame = {
-    fl: { sb: raw.blinds.fl.sb, bb: raw.blinds.fl.bb, ante: raw.blinds.fl.ante },
-    // STUDはキーを sb/bb/ante に寄せる（UIラベルで Bring-in/Complete 表示）
-    stud: { sb: raw.blinds.stud.bringIn, bb: raw.blinds.stud.complete, ante: raw.blinds.stud.ante },
-    // NLPLの nlAnte も ante スロットへ寄せる（UIラベルは Ante のまま）
-    nlpl: { sb: raw.blinds.nlpl.sb, bb: raw.blinds.nlpl.bb, ante: raw.blinds.nlpl.nlAnte },
-  };
+const normalizeBlinds = (raw: RawLevel["blinds"]): BlindsByGame => ({
+  fl: { sb: raw.fl.sb, bb: raw.fl.bb, ante: raw.fl.ante },
+  stud: { sb: raw.stud.bringIn, bb: raw.stud.complete, ante: raw.stud.ante },
+  nlpl: { sb: raw.nlpl.sb, bb: raw.nlpl.bb, ante: raw.nlpl.nlAnte },
+});
 
-  return { durationMs: raw.durationSec * 1000, blinds: b };
-};
+const newId = (prefix: string, i: number) => `${prefix}-${i}`;
 
-// ---- 適当な仮データ（後で差し替え前提） ----
 const RAW_LEVELS: RawLevel[] = [
   {
     durationSec: 20,
@@ -51,8 +45,17 @@ const RAW_LEVELS: RawLevel[] = [
   },
 ];
 
+const entries: TimerEntry[] = RAW_LEVELS.map((r, i) => ({
+  id: newId("lv", i + 1),
+  kind: "level",
+  durationMs: r.durationSec * 1000,
+  blinds: normalizeBlinds(r.blinds),
+}));
+
 export const sampleTimerDefinition: TimerDefinition = {
   id: "sample",
   title: "Poker Timer (Mock)",
-  levels: RAW_LEVELS.map((r) => normalize(r)),
+  entries,
+  defaultLevelDurationMs: 20 * 60_000,
+  defaultBreakDurationMs: 10 * 60_000,
 };

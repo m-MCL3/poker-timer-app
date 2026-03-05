@@ -1,33 +1,53 @@
-import { Level } from "./level";
+import type { BlindsByGame } from "@/domain/entities/blinds";
 
 export type TimerStatus = "idle" | "running" | "paused" | "finished";
+
+export type LevelEntry = {
+  id: string;
+  kind: "level";
+  durationMs: number;
+  blinds: BlindsByGame;
+};
+
+export type BreakEntry = {
+  id: string;
+  kind: "break";
+  durationMs: number;
+};
+
+export type TimerEntry = LevelEntry | BreakEntry;
 
 export type TimerDefinition = {
   id: string;
   title: string;
-  levels: Level[];
+
+  /**
+   * Level と Break を混在させたタイムライン（順序が本体）
+   */
+  entries: TimerEntry[];
+
+  /**
+   * 共通なのは「時間」なので、デフォルトは時間だけ持つ
+   */
+  defaultLevelDurationMs: number;
+  defaultBreakDurationMs: number;
 };
 
 export type TimerRuntime = {
   status: TimerStatus;
-  levelIndex: number;
 
   /**
-   * running中の基準（実時間整合）
-   * remainingMs を毎tickで減らす方式だと、タブ停止/間引きでズレるので、
-   * running中は endsAtEpochMs を正とする。
+   * 現在位置（entriesのindex）
    */
+  entryIndex: number;
+
   endsAtEpochMs: number | null;
-
-  /**
-   * paused中の正（再開用）
-   */
   remainingMs: number | null;
 };
 
 export const createInitialRuntime = (): TimerRuntime => ({
   status: "idle",
-  levelIndex: 0,
+  entryIndex: 0,
   endsAtEpochMs: null,
   remainingMs: null,
 });
