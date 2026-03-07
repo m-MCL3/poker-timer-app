@@ -1,26 +1,42 @@
-import { TimerStatus } from "@/domain/entities/timer";
-import { BlindsByGame, GameKindId } from "@/domain/entities/blinds";
-
-export type BlindLabels = {
-  left: string;
-  mid: string;
-  right: string;
-};
+import {
+  formatBlindValue,
+  labelsFor,
+  type BlindLabels,
+  type BlindsByGame,
+  type GameKindId,
+} from "@/domain/entities/blinds";
+import type { TimerStatus } from "@/domain/entities/timerState";
 
 export type SnapshotKind = {
   kind: GameKindId;
   labels: BlindLabels;
-  blinds: { sb: string; bb: string; ante: string }; // UI用に整形済み
+  blinds: {
+    sb: string;
+    bb: string;
+    ante: string;
+  };
 };
 
 export type TimerSnapshot = {
   title: string;
   status: TimerStatus;
-
   levelIndex: number;
   levelCount: number;
-
-  remainingMs: number; // 0以上
+  remainingMs: number;
+  currentItemKind: "level" | "break";
+  currentItemText: string;
   currentBlinds: SnapshotKind[];
-  nextLevelText: string; // v1.0: 文字列でOK
+  nextLevelText: string;
 };
+
+export function snapshotKinds(blinds: BlindsByGame): SnapshotKind[] {
+  return (["fl", "stud", "nlpl"] as const).map((kind) => ({
+    kind,
+    labels: labelsFor(kind),
+    blinds: {
+      sb: formatBlindValue(blinds[kind].sb),
+      bb: formatBlindValue(blinds[kind].bb),
+      ante: formatBlindValue(blinds[kind].ante),
+    },
+  }));
+}

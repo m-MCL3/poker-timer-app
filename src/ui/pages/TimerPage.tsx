@@ -1,83 +1,126 @@
-import { useEffect, useState } from "react";
-
-import type { TimerSnapshot } from "@/usecases/timer/timerSnapshot";
+import { useEffect, useMemo, useState } from "react";
 import { useContainer } from "@/app/composition/containerContext";
-
+import type { TimerState } from "@/domain/entities/timerState";
+import {
+  createTimerSnapshot,
+  goToNextItem,
+  goToPreviousItem,
+  resetTimer,
+  tickTimer,
+  toggleTimer,
+} from "@/usecases/timer/timerUsecase";
 import TimerBoard from "@/ui/components/TimerBoard";
 import BlindsPanel from "@/ui/components/BlindsPanel";
 import NextLevelPanel from "@/ui/components/NextLevelPanel";
 import MenuButton from "@/ui/components/MenuButton";
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
 
-const formatMMSS = (ms: number) => {
+function formatMMSS(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${pad2(m)}:${pad2(s)}`;
-};
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${pad2(minutes)}:${pad2(seconds)}`;
+}
 
 export default function TimerPage() {
-  const { timerUsecase } = useContainer();
+  const { clock, timerStore } = useContainer();
+  const [timerState, setTimerState] = useState<TimerState>(() =>
+    timerStore.getState(),
+  );
+  const [nowEpochMs, setNowEpochMs] = useState<number>(() => clock.nowEpochMs());
 
-  // ✅ 型を明示して「snapが別型になる」事故を防ぐ
-  const [snap, setSnap] = useState<TimerSnapshot>(() => timerUsecase.getSnapshot());
+  useEffect(() => {
+    return timerStore.subscribe(() => {
+      setTimerState(timerStore.getState());
+    });
+  }, [timerStore]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      timerUsecase.tick();
-      setSnap(timerUsecase.getSnapshot());
+      const now = clock.nowEpochMs();
+      setNowEpochMs(now);
+
+      timerStore.setState(
+        tickTimer({
+          state: timerStore.getState(),
+          nowEpochMs: now,
+        }),
+      );
     }, 250);
 
     return () => window.clearInterval(id);
-  }, [timerUsecase]);
+  }, [clock, timerStore]);
 
-  const onTapBoard = () => {
-    timerUsecase.toggleStartStop();
-    setSnap(timerUsecase.getSnapshot());
-  };
+  const snapshot = useMemo(
+    () =>
+      createTimerSnapshot({
+        state: timerState,
+        nowEpochMs,
+      }),
+    [nowEpochMs, timerState],
+  );
+
+  const isBreak = snapshot.currentItemKind === "break";
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <div className="mx-auto w-full max-w-[760px] px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="text-xs text-zinc-400">{snap.title}</div>
-
-          <MenuButton
-            onResetRequested={() => {
-              if (!confirm("Resetして idle に戻します。よろしいですか？")) return;
-              timerUsecase.resetToIdle();
-              setSnap(timerUsecase.getSnapshot());
-            }}
-            onNextRequested={() => {
-              timerUsecase.goToNextLevel();
-              setSnap(timerUsecase.getSnapshot());
-            }}
-            onPrevRequested={() => {
-              timerUsecase.goToPreviousLevel();
-              setSnap(timerUsecase.getSnapshot());
-            }}
-          />
+    <div className="mx-auto flex min-h-screen max-w-[760px] flex-col gap-4 px-4 py-6 text-zinc-50">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold">{snapshot.title}</h1>
+          <p className="text-sm text-zinc-400">{snapshot.currentItemText}</p>
         </div>
-
-        <div className="mt-4">
-          <TimerBoard
-            status={snap.status}
-            levelIndex={snap.levelIndex}
-            levelCount={snap.levelCount}
-            remainingText={formatMMSS(snap.remainingMs)}
-            onTap={onTapBoard}
-          />
-        </div>
-
-        <div className="mt-4">
-          <BlindsPanel blinds={snap.currentBlinds} />
-        </div>
-
-        <div className="mt-4">
-          <NextLevelPanel text={snap.nextLevelText} />
-        </div>
+        <MenuButton
+          onResetRequested={() => {
+            if (!confirm("Resetして idle に戻します。よろしいですか？")) {
+              return;
+            }
+            timerStore.setState(resetTimer(timerStore.getState()));
+          }}
+          onNextRequested={() =>
+            timerStore.setState(
+              goToNextItem({
+                state: timerStore.getState(),
+                nowEpochMs: clock.nowEpochMs(),
+              }),
+            )
+          }
+          onPrevRequested={() =>
+            timerStore.setState(
+              goToPreviousItem({
+                state: timerStore.getState(),
+                nowEpochMs: clock.nowEpochMs(),
+              }),
+            )
+          }
+        />
       </div>
+
+      {isBreak && (
+        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-center text-sm font-semibold tracking-[0.2em] text-amber-100">
+          BREAK TIME
+        </div>
+      )}
+
+      <TimerBoard
+        status={snapshot.status}
+        levelIndex={snapshot.levelIndex}
+        levelCount={snapshot.levelCount}
+        remainingText={formatMMSS(snapshot.remainingMs)}
+        onTap={() =>
+          timerStore.setState(
+            toggleTimer({
+              state: timerStore.getState(),
+              nowEpochMs: clock.nowEpochMs(),
+            }),
+          )
+        }
+      />
+
+      {!isBreak && <BlindsPanel blinds={snapshot.currentBlinds} />}
+      <NextLevelPanel text={snapshot.nextLevelText} />
     </div>
   );
 }
