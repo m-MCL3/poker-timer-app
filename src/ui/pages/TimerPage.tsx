@@ -39,7 +39,7 @@ export default function TimerPage() {
   }, [timerStore]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const intervalId = window.setInterval(() => {
       const now = clock.nowEpochMs();
       setNowEpochMs(now);
 
@@ -51,7 +51,7 @@ export default function TimerPage() {
       );
     }, 250);
 
-    return () => window.clearInterval(id);
+    return () => window.clearInterval(intervalId);
   }, [clock, timerStore]);
 
   const snapshot = useMemo(
@@ -67,11 +67,13 @@ export default function TimerPage() {
     <div className="mx-auto flex min-h-screen max-w-[760px] flex-col gap-4 px-4 py-6 text-zinc-50">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">{snapshot.title}</h1>
+
         <MenuButton
           onResetRequested={() => {
             if (!confirm("Resetして idle に戻します。よろしいですか？")) {
               return;
             }
+
             timerStore.setState(resetTimer(timerStore.getState()));
           }}
           onNextRequested={() =>

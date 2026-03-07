@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GAME_KIND_ORDER, type BlindSlotId, type GameKindId } from "@/domain/entities/blinds";
+import type { StructurePresetSummary } from "@/domain/entities/structurePreset";
+import {
+  GAME_KIND_ORDER,
+  type BlindSlotId,
+  type GameKindId,
+} from "@/domain/entities/blinds";
 import type { EditOperation } from "@/domain/entities/editOperation";
+import {
+  buildPresetSummaries,
+  hasPreset,
+  normalizePresetName,
+  validatePresetName,
+} from "@/usecases/preset/presetUsecase";
 import {
   appendEditOperation,
   createEditorSnapshot,
@@ -25,6 +36,21 @@ function parseBlindValue(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function formatPresetLabel(preset: StructurePresetSummary): string {
+  if (preset.updatedAtEpochMs <= 0) {
+    return preset.name;
+  }
+
+  const date = new Date(preset.updatedAtEpochMs);
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+
+  return `${preset.name} (${yyyy}-${mm}-${dd} ${hh}:${mi})`;
+}
+
 export default function EditorPage() {
   const navigate = useNavigate();
   const { timerStore, structureStorage } = useContainer();
@@ -35,7 +61,7 @@ export default function EditorPage() {
       isEditable: timerStore.getState().status !== "running",
     }),
   );
-  const [savedNames, setSavedNames] = useState<string[]>([]);
+  const [presets, setPresets] = useState<StructurePresetSummary[]>([]);
   const [saveName, setSaveName] = useState("");
   const [loadName, setLoadName] = useState("");
 
@@ -54,6 +80,15 @@ export default function EditorPage() {
     [editorState],
   );
 
+  async function refreshPresets(): Promise<void> {
+    const nextPresets = await structureStorage.listPresets();
+    setPresets(buildPresetSummaries(nextPresets));
+  }
+
+  useEffect(() => {
+    void refreshPresets();
+  }, [structureStorage]);
+
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!snapshot.isDirty) {
@@ -67,14 +102,6 @@ export default function EditorPage() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [snapshot.isDirty]);
-
-  async function refreshSavedNames(): Promise<void> {
-    setSavedNames(await structureStorage.listNames());
-  }
-
-  useEffect(() => {
-    void refreshSavedNames();
-  }, [structureStorage]);
 
   function pushOperation(operation: EditOperation): void {
     setEditorState((prev) =>
@@ -128,46 +155,125 @@ export default function EditorPage() {
     }
   }
 
-  async function onSave(): Promise<void> {
+  async function onSavePreset(): Promise<void> {
     if (!snapshot.isEditable) {
       return;
     }
 
-    const name = saveName.trim();
-    if (!name) {
-      alert("保存名を入力してください。");
+    const normalizedName = normalizePresetName(saveName);
+    const validationError = validatePresetName(normalizedName);
+
+    if (validationError) {
+      alert(validationError);
       return;
     }
 
-    await structureStorage.save(name, materializeEditorStructure(editorState));
+    if (hasPreset(presets, normalizedName)) {
+      const isAccepted = confirm(
+        `プリセット「${normalizedName}」は既に存在します。上書きしますか？`,
+      );
+
+      if (!isAccepted) {
+        return;
+      }
+    }
+
+    await structureStorage.savePreset(
+      normalizedName,
+      materializeEditorStructure(editorState),
+    );
+
     setSaveName("");
-    setLoadName(name);
-    await refreshSavedNames();
+    setLoadName(normalizedName);
+    await refreshPresets();
   }
 
-  async function onLoad(): Promise<void> {
+  async function onLoadPreset(): Promise<void> {
     if (!snapshot.isEditable) {
       return;
     }
 
-    const name = loadName.trim();
-    if (!name) {
-      alert("読み込む名前を選択してください。");
+    const normalizedName = normalizePresetName(loadName);
+    if (!normalizedName) {
+      alert("読み込むプリセットを選択してください。");
       return;
     }
 
-    const loaded = await structureStorage.load(name);
+    if (snapshot.isDirty) {
+      const isAccepted = confirm(
+        "未適用の変更があります。破棄してプリセットを読み込みますか？",
+      );
+
+      if (!isAccepted) {
+        return;
+      }
+    }
+
+    const loaded = await structureStorage.loadPreset(normalizedName);
     if (!loaded) {
-      alert("読み込みに失敗しました。");
+      alert("プリセットの読み込みに失敗しました。");
       return;
     }
 
-    setEditorState((prev) =>
-      replaceEditorBaseStructure({
-        state: prev,
+    try {
+      const nextTimerState = replaceTournamentStructure({
+        state: timerStore.getState(),
         structure: loaded,
-      }),
+      });
+
+      timerStore.setState(nextTimerState);
+
+      setEditorState((prev) =>
+        replaceEditorBaseStructure({
+          state: prev,
+          structure: nextTimerState.structure,
+        }),
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "プリセットの適用に失敗しました。");
+    }
+  }
+
+  async function onRenamePreset(): Promise<void> {
+    if (!snapshot.isEditable) {
+      return;
+    }
+
+    const currentName = normalizePresetName(loadName);
+    if (!currentName) {
+      alert("リネームするプリセットを選択してください。");
+      return;
+    }
+
+    const inputName = window.prompt(
+      `プリセット「${currentName}」の新しい名前を入力してください。`,
+      currentName,
     );
+
+    if (inputName === null) {
+      return;
+    }
+
+    const nextName = normalizePresetName(inputName);
+    const validationError = validatePresetName(nextName);
+
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
+
+    if (nextName === currentName) {
+      return;
+    }
+
+    if (hasPreset(presets, nextName)) {
+      alert(`プリセット「${nextName}」は既に存在します。`);
+      return;
+    }
+
+    await structureStorage.renamePreset(currentName, nextName);
+    setLoadName(nextName);
+    await refreshPresets();
   }
 
   async function onDeletePreset(): Promise<void> {
@@ -175,20 +281,23 @@ export default function EditorPage() {
       return;
     }
 
-    const name = loadName.trim();
-    if (!name) {
+    const normalizedName = normalizePresetName(loadName);
+    if (!normalizedName) {
       alert("削除するプリセットを選択してください。");
       return;
     }
 
-    const isAccepted = confirm(`プリセット「${name}」を削除します。よろしいですか？`);
+    const isAccepted = confirm(
+      `プリセット「${normalizedName}」を削除します。よろしいですか？`,
+    );
+
     if (!isAccepted) {
       return;
     }
 
-    await structureStorage.remove(name);
+    await structureStorage.deletePreset(normalizedName);
     setLoadName("");
-    await refreshSavedNames();
+    await refreshPresets();
   }
 
   return (
@@ -213,21 +322,21 @@ export default function EditorPage() {
       </div>
 
       <section className="editor-save-load">
-        <h2>Save / Load</h2>
+        <h2>Presets</h2>
 
         <div className="editor-save-load-row">
           <input
             value={saveName}
             onChange={(event) => setSaveName(event.target.value)}
             disabled={!snapshot.isEditable}
-            placeholder="保存名"
+            placeholder="プリセット名"
           />
           <button
             type="button"
-            onClick={() => void onSave()}
+            onClick={() => void onSavePreset()}
             disabled={!snapshot.isEditable}
           >
-            Save
+            Save Preset
           </button>
 
           <select
@@ -235,20 +344,28 @@ export default function EditorPage() {
             onChange={(event) => setLoadName(event.target.value)}
             disabled={!snapshot.isEditable}
           >
-            <option value="">（保存済みを選択）</option>
-            {savedNames.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            <option value="">（プリセットを選択）</option>
+            {presets.map((preset) => (
+              <option key={preset.name} value={preset.name}>
+                {formatPresetLabel(preset)}
               </option>
             ))}
           </select>
 
           <button
             type="button"
-            onClick={() => void onLoad()}
+            onClick={() => void onLoadPreset()}
             disabled={!snapshot.isEditable}
           >
-            Load
+            Load Preset
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void onRenamePreset()}
+            disabled={!snapshot.isEditable}
+          >
+            Rename Preset
           </button>
 
           <button
@@ -256,7 +373,7 @@ export default function EditorPage() {
             onClick={() => void onDeletePreset()}
             disabled={!snapshot.isEditable}
           >
-            Delete
+            Delete Preset
           </button>
         </div>
       </section>

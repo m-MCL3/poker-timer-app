@@ -44,45 +44,19 @@ function computeRemainingMs(state: TimerState, nowEpochMs: number): number {
   return 0;
 }
 
-function findDisplayLevelNumber(
+function countLevelsUpToItem(
   structure: TournamentStructure,
   itemIndex: number,
-): number | null {
-  let levelNumber = 0;
+): number {
+  let levelCount = 0;
 
   for (let index = 0; index <= itemIndex; index += 1) {
-    if (structure.items[index].kind === "level") {
-      levelNumber += 1;
+    if (structure.items[index]?.kind === "level") {
+      levelCount += 1;
     }
   }
 
-  return structure.items[itemIndex]?.kind === "level" ? levelNumber : null;
-}
-
-function findLevelForBlindDisplay(
-  structure: TournamentStructure,
-  itemIndex: number,
-): Extract<TournamentStructureItem, { kind: "level" }> | null {
-  const item = structure.items[itemIndex];
-  if (item?.kind === "level") {
-    return item;
-  }
-
-  for (let index = itemIndex - 1; index >= 0; index -= 1) {
-    const prevItem = structure.items[index];
-    if (prevItem.kind === "level") {
-      return prevItem;
-    }
-  }
-
-  return null;
-}
-
-function findNextItem(
-  structure: TournamentStructure,
-  itemIndex: number,
-): TournamentStructureItem | null {
-  return structure.items[itemIndex + 1] ?? null;
+  return Math.max(levelCount, 1);
 }
 
 function findItemIndexByOffset(
@@ -91,6 +65,7 @@ function findItemIndexByOffset(
   offset: -1 | 1,
 ): number | null {
   const nextIndex = itemIndex + offset;
+
   if (nextIndex < 0 || nextIndex >= structure.items.length) {
     return null;
   }
@@ -98,7 +73,7 @@ function findItemIndexByOffset(
   return nextIndex;
 }
 
-function formatBlindTriple(
+function buildBlindText(
   item: Extract<TournamentStructureItem, { kind: "level" }>,
 ): string {
   return GAME_KIND_ORDER.map((gameKind) => {
@@ -112,38 +87,39 @@ function formatBlindTriple(
   }).join(" | ");
 }
 
-function buildNextItemText(
-  structure: TournamentStructure,
-  itemIndex: number,
-): string {
-  const nextItem = findNextItem(structure, itemIndex);
-
-  if (!nextItem) {
-    return "（最終項目）";
-  }
-
-  if (nextItem.kind === "break") {
-    return "NEXT: BREAK";
-  }
-
-  const levelNumber = findDisplayLevelNumber(structure, itemIndex + 1);
-  const levelLabel = levelNumber === null ? "LEVEL" : `LEVEL ${levelNumber}`;
-
-  return `NEXT: ${levelLabel} | ${formatBlindTriple(nextItem)}`;
-}
-
 function buildCurrentItemLabel(
   structure: TournamentStructure,
   itemIndex: number,
 ): string {
   const item = structure.items[itemIndex];
 
+  if (!item) {
+    return "";
+  }
+
   if (item.kind === "break") {
     return "BREAK";
   }
 
-  const levelNumber = findDisplayLevelNumber(structure, itemIndex);
-  return levelNumber === null ? "LEVEL" : `LEVEL ${levelNumber}`;
+  return `LEVEL ${countLevelsUpToItem(structure, itemIndex)}`;
+}
+
+function buildNextItemText(
+  structure: TournamentStructure,
+  itemIndex: number,
+): string {
+  const nextItem = structure.items[itemIndex + 1];
+
+  if (!nextItem) {
+    return "NEXT: （最終項目）";
+  }
+
+  if (nextItem.kind === "break") {
+    return "NEXT: BREAK";
+  }
+
+  const levelNumber = countLevelsUpToItem(structure, itemIndex + 1);
+  return `NEXT: LEVEL ${levelNumber} | ${buildBlindText(nextItem)}`;
 }
 
 function moveToItem(input: {
@@ -182,44 +158,7 @@ function moveToItem(input: {
   };
 }
 
-export function toggleTimer(input: {
-  state: TimerState;
-  nowEpochMs: number;
-}): TimerState {
-  if (input.state.status === "idle") {
-    return {
-      ...input.state,
-      status: "running",
-      endsAtEpochMs: input.nowEpochMs + currentItemDurationMs(input.state),
-      pausedRemainingMs: null,
-    };
-  }
-
-  if (input.state.status === "running") {
-    return {
-      ...input.state,
-      status: "paused",
-      endsAtEpochMs: null,
-      pausedRemainingMs: computeRemainingMs(input.state, input.nowEpochMs),
-    };
-  }
-
-  if (input.state.status === "paused") {
-    const remainingMs =
-      input.state.pausedRemainingMs ?? currentItemDurationMs(input.state);
-
-    return {
-      ...input.state,
-      status: "running",
-      endsAtEpochMs: input.nowEpochMs + remainingMs,
-      pausedRemainingMs: null,
-    };
-  }
-
-  return createInitialTimerState(input.state.structure);
-}
-
-export function tickTimer(input: {
+function advanceRunningTimer(input: {
   state: TimerState;
   nowEpochMs: number;
 }): TimerState {
@@ -227,29 +166,129 @@ export function tickTimer(input: {
     return input.state;
   }
 
-  const remainingMs = computeRemainingMs(input.state, input.nowEpochMs);
-  if (remainingMs > 0) {
-    return input.state;
-  }
+  let nextState = { ...input.state };
 
-  const nextItemIndex = input.state.currentItemIndex + 1;
-  if (nextItemIndex >= input.state.structure.items.length) {
-    return {
-      ...input.state,
-      status: "finished",
-      endsAtEpochMs: null,
+  while (nextState.status === "running") {
+    const remainingMs = computeRemainingMs(nextState, input.nowEpochMs);
+
+    if (remainingMs > 0) {
+      return nextState;
+    }
+
+    const nextItemIndex = nextState.currentItemIndex + 1;
+    if (nextItemIndex >= nextState.structure.items.length) {
+      return {
+        ...nextState,
+        status: "finished",
+        endsAtEpochMs: null,
+        pausedRemainingMs: null,
+      };
+    }
+
+    nextState = {
+      ...nextState,
+      currentItemIndex: nextItemIndex,
+      status: "running",
+      endsAtEpochMs:
+        (nextState.endsAtEpochMs ?? input.nowEpochMs) +
+        nextState.structure.items[nextItemIndex].durationMs,
       pausedRemainingMs: null,
     };
   }
 
+  return nextState;
+}
+
+export function syncTimerState(input: {
+  state: TimerState;
+  nowEpochMs: number;
+}): TimerState {
+  return advanceRunningTimer(input);
+}
+
+export function startTimer(input: {
+  state: TimerState;
+  nowEpochMs: number;
+}): TimerState {
+  const syncedState = syncTimerState(input);
+
   return {
-    ...input.state,
-    currentItemIndex: nextItemIndex,
+    ...syncedState,
     status: "running",
-    endsAtEpochMs:
-      input.nowEpochMs + input.state.structure.items[nextItemIndex].durationMs,
+    endsAtEpochMs: input.nowEpochMs + currentItemDurationMs(syncedState),
     pausedRemainingMs: null,
   };
+}
+
+export function pauseTimer(input: {
+  state: TimerState;
+  nowEpochMs: number;
+}): TimerState {
+  const syncedState = syncTimerState(input);
+
+  if (syncedState.status !== "running") {
+    return syncedState;
+  }
+
+  return {
+    ...syncedState,
+    status: "paused",
+    endsAtEpochMs: null,
+    pausedRemainingMs: computeRemainingMs(syncedState, input.nowEpochMs),
+  };
+}
+
+export function resumeTimer(input: {
+  state: TimerState;
+  nowEpochMs: number;
+}): TimerState {
+  const syncedState = syncTimerState(input);
+  const remainingMs =
+    syncedState.pausedRemainingMs ?? currentItemDurationMs(syncedState);
+
+  return {
+    ...syncedState,
+    status: "running",
+    endsAtEpochMs: input.nowEpochMs + remainingMs,
+    pausedRemainingMs: null,
+  };
+}
+
+export function toggleTimer(input: {
+  state: TimerState;
+  nowEpochMs: number;
+}): TimerState {
+  const syncedState = syncTimerState(input);
+
+  if (syncedState.status === "idle") {
+    return startTimer({
+      state: syncedState,
+      nowEpochMs: input.nowEpochMs,
+    });
+  }
+
+  if (syncedState.status === "running") {
+    return pauseTimer({
+      state: syncedState,
+      nowEpochMs: input.nowEpochMs,
+    });
+  }
+
+  if (syncedState.status === "paused") {
+    return resumeTimer({
+      state: syncedState,
+      nowEpochMs: input.nowEpochMs,
+    });
+  }
+
+  return createInitialTimerState(syncedState.structure);
+}
+
+export function tickTimer(input: {
+  state: TimerState;
+  nowEpochMs: number;
+}): TimerState {
+  return syncTimerState(input);
 }
 
 export function resetTimer(state: TimerState): TimerState {
@@ -260,18 +299,19 @@ export function goToNextItem(input: {
   state: TimerState;
   nowEpochMs: number;
 }): TimerState {
+  const syncedState = syncTimerState(input);
   const nextItemIndex = findItemIndexByOffset(
-    input.state.structure,
-    input.state.currentItemIndex,
+    syncedState.structure,
+    syncedState.currentItemIndex,
     1,
   );
 
   if (nextItemIndex === null) {
-    return input.state;
+    return syncedState;
   }
 
   return moveToItem({
-    state: input.state,
+    state: syncedState,
     itemIndex: nextItemIndex,
     nowEpochMs: input.nowEpochMs,
   });
@@ -281,19 +321,20 @@ export function goToPreviousItem(input: {
   state: TimerState;
   nowEpochMs: number;
 }): TimerState {
-  const prevItemIndex = findItemIndexByOffset(
-    input.state.structure,
-    input.state.currentItemIndex,
+  const syncedState = syncTimerState(input);
+  const previousItemIndex = findItemIndexByOffset(
+    syncedState.structure,
+    syncedState.currentItemIndex,
     -1,
   );
 
-  if (prevItemIndex === null) {
-    return input.state;
+  if (previousItemIndex === null) {
+    return syncedState;
   }
 
   return moveToItem({
-    state: input.state,
-    itemIndex: prevItemIndex,
+    state: syncedState,
+    itemIndex: previousItemIndex,
     nowEpochMs: input.nowEpochMs,
   });
 }
@@ -343,33 +384,32 @@ export function createTimerSnapshot(input: {
   state: TimerState;
   nowEpochMs: number;
 }): TimerSnapshot {
-  const item = currentItem(input.state);
-  const levelForBlindDisplay = findLevelForBlindDisplay(
-    input.state.structure,
-    input.state.currentItemIndex,
-  );
+  const syncedState = syncTimerState(input);
+  const item = currentItem(syncedState);
+  const currentItemIndex = syncedState.currentItemIndex;
 
   return {
-    title: input.state.structure.title,
-    status: input.state.status,
-    currentItemIndex: input.state.currentItemIndex,
-    currentItemNumber: input.state.currentItemIndex + 1,
-    totalItemCount: input.state.structure.items.length,
+    title: syncedState.structure.title,
+    status: syncedState.status,
+    currentItemIndex,
+    currentItemNumber: currentItemIndex + 1,
+    totalItemCount: syncedState.structure.items.length,
+    currentItemOrderText: `ITEM ${currentItemIndex + 1} / ${syncedState.structure.items.length}`,
     currentItemKind: item.kind,
     currentItemLabel: buildCurrentItemLabel(
-      input.state.structure,
-      input.state.currentItemIndex,
+      syncedState.structure,
+      currentItemIndex,
     ),
-    remainingMs: computeRemainingMs(input.state, input.nowEpochMs),
+    remainingMs: computeRemainingMs(syncedState, input.nowEpochMs),
     showBreakBanner: item.kind === "break",
     showCurrentBlinds: item.kind === "level",
     currentBlindGroups:
       item.kind === "level"
-        ? createBlindGroupSnapshot(levelForBlindDisplay?.blinds ?? EMPTY_BLINDS)
-        : [],
+        ? createBlindGroupSnapshot(item.blinds)
+        : createBlindGroupSnapshot(EMPTY_BLINDS),
     nextItemText: buildNextItemText(
-      input.state.structure,
-      input.state.currentItemIndex,
+      syncedState.structure,
+      currentItemIndex,
     ),
   };
 }

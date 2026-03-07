@@ -23,6 +23,7 @@ export type TimerSnapshot = {
   currentItemIndex: number;
   currentItemNumber: number;
   totalItemCount: number;
+  currentItemOrderText: string;
   currentItemKind: "level" | "break";
   currentItemLabel: string;
   remainingMs: number;

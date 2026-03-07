@@ -1,4 +1,5 @@
 import type { EditOperation } from "@/domain/entities/editOperation";
+import { applyEditOperations } from "@/domain/entities/editOperation";
 import type {
   TournamentStructure,
   TournamentStructureItem,
@@ -15,144 +16,7 @@ export type EditorState = {
   isEditable: boolean;
 };
 
-function createDefaultLevelItem(input: {
-  id: string;
-  durationMs: number;
-}): Extract<TournamentStructureItem, { kind: "level" }> {
-  return {
-    id: input.id,
-    kind: "level",
-    durationMs: input.durationMs,
-    blinds: {
-      fl: { sb: null, bb: null, ante: null },
-      stud: { sb: null, bb: null, ante: null },
-      nlpl: { sb: null, bb: null, ante: null },
-    },
-  };
-}
-
-function createDefaultBreakItem(input: {
-  id: string;
-  durationMs: number;
-}): Extract<TournamentStructureItem, { kind: "break" }> {
-  return {
-    id: input.id,
-    kind: "break",
-    durationMs: input.durationMs,
-  };
-}
-
-function cloneItem(item: TournamentStructureItem): TournamentStructureItem {
-  if (item.kind === "break") {
-    return { ...item };
-  }
-
-  return {
-    ...item,
-    blinds: {
-      fl: { ...item.blinds.fl },
-      stud: { ...item.blinds.stud },
-      nlpl: { ...item.blinds.nlpl },
-    },
-  };
-}
-
-function buildInsertedItem(
-  structure: TournamentStructure,
-  itemKind: "level" | "break",
-  itemIndex: number,
-): TournamentStructureItem {
-  if (itemKind === "break") {
-    return createDefaultBreakItem({
-      id: `break-${Date.now()}-${itemIndex + 1}`,
-      durationMs: structure.defaultBreakDurationMs,
-    });
-  }
-
-  return createDefaultLevelItem({
-    id: `level-${Date.now()}-${itemIndex + 1}`,
-    durationMs: structure.defaultLevelDurationMs,
-  });
-}
-
-function applyOperation(
-  structure: TournamentStructure,
-  operation: EditOperation,
-): TournamentStructure {
-  const items = structure.items.map(cloneItem);
-
-  switch (operation.type) {
-    case "insert-level-after": {
-      items.splice(
-        operation.itemIndex + 1,
-        0,
-        buildInsertedItem(structure, "level", operation.itemIndex),
-      );
-      return { ...structure, items };
-    }
-
-    case "insert-break-after": {
-      items.splice(
-        operation.itemIndex + 1,
-        0,
-        buildInsertedItem(structure, "break", operation.itemIndex),
-      );
-      return { ...structure, items };
-    }
-
-    case "remove-item": {
-      if (items.length <= 1) {
-        return structure;
-      }
-
-      items.splice(operation.itemIndex, 1);
-      return { ...structure, items };
-    }
-
-    case "change-item-kind": {
-      const current = items[operation.itemIndex];
-      if (!current) {
-        return structure;
-      }
-
-      items[operation.itemIndex] = buildInsertedItem(
-        structure,
-        operation.kind,
-        operation.itemIndex,
-      );
-
-      items[operation.itemIndex].id = current.id;
-      items[operation.itemIndex].durationMs = current.durationMs;
-
-      return { ...structure, items };
-    }
-
-    case "set-duration-minutes": {
-      const current = items[operation.itemIndex];
-      if (!current) {
-        return structure;
-      }
-
-      current.durationMs = Math.max(0, operation.minutes) * 60_000;
-      return { ...structure, items };
-    }
-
-    case "set-blind-value": {
-      const current = items[operation.itemIndex];
-      if (!current || current.kind !== "level") {
-        return structure;
-      }
-
-      current.blinds[operation.gameKind][operation.slot] = operation.value;
-      return { ...structure, items };
-    }
-
-    default:
-      return structure;
-  }
-}
-
-function toDisplayLabel(
+function buildItemLabel(
   structure: TournamentStructure,
   itemIndex: number,
 ): string {
@@ -182,7 +46,7 @@ function toRowSnapshot(
     itemIndex,
     itemNumber: itemIndex + 1,
     itemKind: item.kind,
-    itemLabel: toDisplayLabel(structure, itemIndex),
+    itemLabel: buildItemLabel(structure, itemIndex),
     durationMinutesText: String(Math.floor(item.durationMs / 60_000)),
     blindCells: (["fl", "stud", "nlpl"] as const).map((gameKind) => {
       if (item.kind === "break") {
@@ -195,7 +59,6 @@ function toRowSnapshot(
       }
 
       const triple = item.blinds[gameKind];
-
       return {
         gameKind,
         sb: triple.sb === null ? "" : String(triple.sb),
@@ -222,9 +85,9 @@ export function createEditorState(input: {
 export function materializeEditorStructure(
   state: EditorState,
 ): TournamentStructure {
-  return state.operations.reduce(
-    (structure, operation) => applyOperation(structure, operation),
+  return applyEditOperations(
     cloneTournamentStructure(state.baseStructure),
+    state.operations,
   );
 }
 

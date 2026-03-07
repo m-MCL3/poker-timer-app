@@ -9,6 +9,22 @@ type Props = {
   onTap: () => void;
 };
 
+function statusLabel(status: TimerStatus): string {
+  if (status === "idle") {
+    return "IDLE";
+  }
+
+  if (status === "running") {
+    return "RUNNING";
+  }
+
+  if (status === "paused") {
+    return "PAUSED";
+  }
+
+  return "FINISHED";
+}
+
 export default function TimerBoard(props: Props) {
   return (
     <button type="button" className="timer-board" onClick={props.onTap}>
@@ -16,8 +32,9 @@ export default function TimerBoard(props: Props) {
         ITEM {props.currentItemNumber} / {props.totalItemCount}
       </div>
       <div className="timer-board__item-label">{props.currentItemLabel}</div>
+      <div className="timer-board__status">{statusLabel(props.status)}</div>
       <div className="timer-board__time">{props.remainingText}</div>
-      <div className="timer-board__status">{props.status.toUpperCase()}</div>
+      <div className="timer-board__hint">Tap to Start/Stop</div>
     </button>
   );
 }
