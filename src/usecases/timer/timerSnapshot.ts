@@ -20,13 +20,14 @@ export type SnapshotKind = {
 export type TimerSnapshot = {
   title: string;
   status: TimerStatus;
-  levelIndex: number;
-  levelCount: number;
-  remainingMs: number;
+  currentItemIndex: number;
+  totalItemCount: number;
+  currentItemOrderText: string;
   currentItemKind: "level" | "break";
-  currentItemText: string;
-  currentBlinds: SnapshotKind[];
-  nextLevelText: string;
+  currentItemLabel: string;
+  remainingMs: number;
+  currentDisplayBlinds: SnapshotKind[];
+  nextItemText: string;
 };
 
 export function snapshotKinds(blinds: BlindsByGame): SnapshotKind[] {

@@ -1,4 +1,4 @@
-import { GAME_KIND_ORDER, EMPTY_BLINDS } from "@/domain/entities/blinds";
+import { GAME_KIND_ORDER } from "@/domain/entities/blinds";
 import {
   createInitialTimerState,
   type TimerState,
@@ -41,56 +41,27 @@ function computeRemainingMs(state: TimerState, nowEpochMs: number): number {
   return 0;
 }
 
-function countLevels(structure: TournamentStructure): number {
-  return structure.items.filter((item) => item.kind === "level").length;
-}
-
-function levelIndexForItem(
+function countLevelsUpToItem(
   structure: TournamentStructure,
   itemIndex: number,
 ): number {
-  let index = -1;
+  let levelCount = 0;
 
   for (let i = 0; i <= itemIndex; i += 1) {
-    if (structure.items[i].kind === "level") {
-      index += 1;
+    if (structure.items[i]?.kind === "level") {
+      levelCount += 1;
     }
   }
 
-  return Math.max(0, index);
+  return Math.max(levelCount, 1);
 }
 
-function findLevelForDisplay(
+function findItemByOffset(
   structure: TournamentStructure,
   itemIndex: number,
-): Extract<TournamentStructureItem, { kind: "level" }> | null {
-  const direct = structure.items[itemIndex];
-  if (direct?.kind === "level") {
-    return direct;
-  }
-
-  for (let i = itemIndex - 1; i >= 0; i -= 1) {
-    const item = structure.items[i];
-    if (item.kind === "level") {
-      return item;
-    }
-  }
-
-  for (let i = itemIndex + 1; i < structure.items.length; i += 1) {
-    const item = structure.items[i];
-    if (item.kind === "level") {
-      return item;
-    }
-  }
-
-  return null;
-}
-
-function findNextItem(
-  structure: TournamentStructure,
-  itemIndex: number,
+  offset: -1 | 1,
 ): TournamentStructureItem | null {
-  return structure.items[itemIndex + 1] ?? null;
+  return structure.items[itemIndex + offset] ?? null;
 }
 
 function findItemIndexByOffset(
@@ -102,6 +73,7 @@ function findItemIndexByOffset(
   if (nextIndex < 0 || nextIndex >= structure.items.length) {
     return null;
   }
+
   return nextIndex;
 }
 
@@ -118,14 +90,31 @@ function buildBlindsText(
   }).join(" | ");
 }
 
-function buildUpcomingItemText(
+function buildItemLabel(
   structure: TournamentStructure,
   itemIndex: number,
 ): string {
-  const nextItem = findNextItem(structure, itemIndex);
+  const item = structure.items[itemIndex];
+
+  if (!item) {
+    return "";
+  }
+
+  if (item.kind === "break") {
+    return "BREAK";
+  }
+
+  return `LEVEL ${countLevelsUpToItem(structure, itemIndex)}`;
+}
+
+function buildNextItemText(
+  structure: TournamentStructure,
+  itemIndex: number,
+): string {
+  const nextItem = findItemByOffset(structure, itemIndex, 1);
 
   if (!nextItem) {
-    return "（最終項目）";
+    return "NEXT: （最終項目）";
   }
 
   if (nextItem.kind === "break") {
@@ -270,19 +259,19 @@ export function goToPreviousItem(input: {
   state: TimerState;
   nowEpochMs: number;
 }): TimerState {
-  const prevItemIndex = findItemIndexByOffset(
+  const previousItemIndex = findItemIndexByOffset(
     input.state.structure,
     input.state.currentItemIndex,
     -1,
   );
 
-  if (prevItemIndex === null) {
+  if (previousItemIndex === null) {
     return input.state;
   }
 
   return moveToItem({
     state: input.state,
-    itemIndex: prevItemIndex,
+    itemIndex: previousItemIndex,
     nowEpochMs: input.nowEpochMs,
   });
 }
@@ -333,30 +322,22 @@ export function createTimerSnapshot(input: {
   nowEpochMs: number;
 }): TimerSnapshot {
   const item = currentItem(input.state);
-  const level = findLevelForDisplay(
-    input.state.structure,
-    input.state.currentItemIndex,
-  );
+  const currentItemIndex = input.state.currentItemIndex;
 
   return {
     title: input.state.structure.title,
     status: input.state.status,
-    levelIndex: levelIndexForItem(
-      input.state.structure,
-      input.state.currentItemIndex,
-    ),
-    levelCount: countLevels(input.state.structure),
-    remainingMs: computeRemainingMs(input.state, input.nowEpochMs),
+    currentItemIndex,
+    totalItemCount: input.state.structure.items.length,
+    currentItemOrderText: `ITEM ${currentItemIndex + 1} / ${input.state.structure.items.length}`,
     currentItemKind: item.kind,
-    currentItemText:
-      item.kind === "break"
-        ? "BREAK"
-        : `LEVEL ${levelIndexForItem(input.state.structure, input.state.currentItemIndex) + 1}`,
-    currentBlinds:
-      item.kind === "break" ? [] : snapshotKinds(level?.blinds ?? EMPTY_BLINDS),
-    nextLevelText: buildUpcomingItemText(
+    currentItemLabel: buildItemLabel(input.state.structure, currentItemIndex),
+    remainingMs: computeRemainingMs(input.state, input.nowEpochMs),
+    currentDisplayBlinds:
+      item.kind === "level" ? snapshotKinds(item.blinds) : [],
+    nextItemText: buildNextItemText(
       input.state.structure,
-      input.state.currentItemIndex,
+      currentItemIndex,
     ),
   };
 }

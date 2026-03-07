@@ -70,7 +70,8 @@ export default function TimerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">{snapshot.title}</h1>
-          <p className="text-sm text-zinc-400">{snapshot.currentItemText}</p>
+          <p className="text-sm text-zinc-400">{snapshot.currentItemOrderText}</p>
+          <p className="text-sm text-zinc-300">{snapshot.currentItemLabel}</p>
         </div>
         <MenuButton
           onResetRequested={() => {
@@ -106,8 +107,8 @@ export default function TimerPage() {
 
       <TimerBoard
         status={snapshot.status}
-        levelIndex={snapshot.levelIndex}
-        levelCount={snapshot.levelCount}
+        levelIndex={snapshot.currentItemIndex}
+        levelCount={snapshot.totalItemCount}
         remainingText={formatMMSS(snapshot.remainingMs)}
         onTap={() =>
           timerStore.setState(
@@ -119,8 +120,8 @@ export default function TimerPage() {
         }
       />
 
-      {!isBreak && <BlindsPanel blinds={snapshot.currentBlinds} />}
-      <NextLevelPanel text={snapshot.nextLevelText} />
+      {!isBreak && <BlindsPanel blinds={snapshot.currentDisplayBlinds} />}
+      <NextLevelPanel text={snapshot.nextItemText} />
     </div>
   );
 }
