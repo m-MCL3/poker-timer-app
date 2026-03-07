@@ -1,4 +1,4 @@
-# Domain Model
+# Domain Model Diagram
 
 ```mermaid
 classDiagram
@@ -6,17 +6,21 @@ classDiagram
 class TournamentStructure {
   id
   title
+  defaultLevelDurationMs
+  defaultBreakDurationMs
   items[]
 }
 
 class LevelItem {
-  kind = level
+  id
+  kind = "level"
   durationMs
   blinds
 }
 
 class BreakItem {
-  kind = break
+  id
+  kind = "break"
   durationMs
 }
 

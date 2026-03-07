@@ -9,7 +9,7 @@ idle --> running : start
 running --> paused : pause
 paused --> running : resume
 
-running --> finished : last item
+running --> finished : last item ends
 
 paused --> idle : reset
 running --> idle : reset
