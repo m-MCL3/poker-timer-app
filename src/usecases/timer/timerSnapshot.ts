@@ -7,8 +7,8 @@ import {
 } from "@/domain/entities/blinds";
 import type { TimerStatus } from "@/domain/entities/timerState";
 
-export type SnapshotKind = {
-  kind: GameKindId;
+export type SnapshotBlindGroup = {
+  gameKind: GameKindId;
   labels: BlindLabels;
   blinds: {
     sb: string;
@@ -21,23 +21,27 @@ export type TimerSnapshot = {
   title: string;
   status: TimerStatus;
   currentItemIndex: number;
+  currentItemNumber: number;
   totalItemCount: number;
-  currentItemOrderText: string;
   currentItemKind: "level" | "break";
   currentItemLabel: string;
   remainingMs: number;
-  currentDisplayBlinds: SnapshotKind[];
+  showBreakBanner: boolean;
+  showCurrentBlinds: boolean;
+  currentBlindGroups: SnapshotBlindGroup[];
   nextItemText: string;
 };
 
-export function snapshotKinds(blinds: BlindsByGame): SnapshotKind[] {
-  return (["fl", "stud", "nlpl"] as const).map((kind) => ({
-    kind,
-    labels: labelsFor(kind),
+export function createBlindGroupSnapshot(
+  blinds: BlindsByGame,
+): SnapshotBlindGroup[] {
+  return (["fl", "stud", "nlpl"] as const).map((gameKind) => ({
+    gameKind,
+    labels: labelsFor(gameKind),
     blinds: {
-      sb: formatBlindValue(blinds[kind].sb),
-      bb: formatBlindValue(blinds[kind].bb),
-      ante: formatBlindValue(blinds[kind].ante),
+      sb: formatBlindValue(blinds[gameKind].sb),
+      bb: formatBlindValue(blinds[gameKind].bb),
+      ante: formatBlindValue(blinds[gameKind].ante),
     },
   }));
 }

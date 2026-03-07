@@ -1,4 +1,4 @@
-import { GAME_KIND_ORDER } from "@/domain/entities/blinds";
+import { GAME_KIND_ORDER, EMPTY_BLINDS } from "@/domain/entities/blinds";
 import {
   createInitialTimerState,
   type TimerState,
@@ -9,7 +9,10 @@ import type {
   TournamentStructureItem,
 } from "@/domain/entities/tournamentStructure";
 import { cloneTournamentStructure } from "@/domain/entities/tournamentStructure";
-import { snapshotKinds, type TimerSnapshot } from "@/usecases/timer/timerSnapshot";
+import {
+  createBlindGroupSnapshot,
+  type TimerSnapshot,
+} from "@/usecases/timer/timerSnapshot";
 
 function clampNonNegative(value: number): number {
   return value < 0 ? 0 : value;
@@ -41,27 +44,45 @@ function computeRemainingMs(state: TimerState, nowEpochMs: number): number {
   return 0;
 }
 
-function countLevelsUpToItem(
+function findDisplayLevelNumber(
   structure: TournamentStructure,
   itemIndex: number,
-): number {
-  let levelCount = 0;
+): number | null {
+  let levelNumber = 0;
 
-  for (let i = 0; i <= itemIndex; i += 1) {
-    if (structure.items[i]?.kind === "level") {
-      levelCount += 1;
+  for (let index = 0; index <= itemIndex; index += 1) {
+    if (structure.items[index].kind === "level") {
+      levelNumber += 1;
     }
   }
 
-  return Math.max(levelCount, 1);
+  return structure.items[itemIndex]?.kind === "level" ? levelNumber : null;
 }
 
-function findItemByOffset(
+function findLevelForBlindDisplay(
   structure: TournamentStructure,
   itemIndex: number,
-  offset: -1 | 1,
+): Extract<TournamentStructureItem, { kind: "level" }> | null {
+  const item = structure.items[itemIndex];
+  if (item?.kind === "level") {
+    return item;
+  }
+
+  for (let index = itemIndex - 1; index >= 0; index -= 1) {
+    const prevItem = structure.items[index];
+    if (prevItem.kind === "level") {
+      return prevItem;
+    }
+  }
+
+  return null;
+}
+
+function findNextItem(
+  structure: TournamentStructure,
+  itemIndex: number,
 ): TournamentStructureItem | null {
-  return structure.items[itemIndex + offset] ?? null;
+  return structure.items[itemIndex + 1] ?? null;
 }
 
 function findItemIndexByOffset(
@@ -77,51 +98,52 @@ function findItemIndexByOffset(
   return nextIndex;
 }
 
-function buildBlindsText(
+function formatBlindTriple(
   item: Extract<TournamentStructureItem, { kind: "level" }>,
 ): string {
-  return GAME_KIND_ORDER.map((kind) => {
-    const triple = item.blinds[kind];
+  return GAME_KIND_ORDER.map((gameKind) => {
+    const triple = item.blinds[gameKind];
     const sb = triple.sb === null || triple.sb === 0 ? "-" : String(triple.sb);
     const bb = triple.bb === null || triple.bb === 0 ? "-" : String(triple.bb);
     const ante =
       triple.ante === null || triple.ante === 0 ? "-" : String(triple.ante);
-    return `${kind.toUpperCase()}: ${sb} / ${bb} ( ${ante} )`;
+
+    return `${gameKind.toUpperCase()}: ${sb} / ${bb} ( ${ante} )`;
   }).join(" | ");
-}
-
-function buildItemLabel(
-  structure: TournamentStructure,
-  itemIndex: number,
-): string {
-  const item = structure.items[itemIndex];
-
-  if (!item) {
-    return "";
-  }
-
-  if (item.kind === "break") {
-    return "BREAK";
-  }
-
-  return `LEVEL ${countLevelsUpToItem(structure, itemIndex)}`;
 }
 
 function buildNextItemText(
   structure: TournamentStructure,
   itemIndex: number,
 ): string {
-  const nextItem = findItemByOffset(structure, itemIndex, 1);
+  const nextItem = findNextItem(structure, itemIndex);
 
   if (!nextItem) {
-    return "NEXT: （最終項目）";
+    return "（最終項目）";
   }
 
   if (nextItem.kind === "break") {
     return "NEXT: BREAK";
   }
 
-  return `NEXT: ${buildBlindsText(nextItem)}`;
+  const levelNumber = findDisplayLevelNumber(structure, itemIndex + 1);
+  const levelLabel = levelNumber === null ? "LEVEL" : `LEVEL ${levelNumber}`;
+
+  return `NEXT: ${levelLabel} | ${formatBlindTriple(nextItem)}`;
+}
+
+function buildCurrentItemLabel(
+  structure: TournamentStructure,
+  itemIndex: number,
+): string {
+  const item = structure.items[itemIndex];
+
+  if (item.kind === "break") {
+    return "BREAK";
+  }
+
+  const levelNumber = findDisplayLevelNumber(structure, itemIndex);
+  return levelNumber === null ? "LEVEL" : `LEVEL ${levelNumber}`;
 }
 
 function moveToItem(input: {
@@ -259,19 +281,19 @@ export function goToPreviousItem(input: {
   state: TimerState;
   nowEpochMs: number;
 }): TimerState {
-  const previousItemIndex = findItemIndexByOffset(
+  const prevItemIndex = findItemIndexByOffset(
     input.state.structure,
     input.state.currentItemIndex,
     -1,
   );
 
-  if (previousItemIndex === null) {
+  if (prevItemIndex === null) {
     return input.state;
   }
 
   return moveToItem({
     state: input.state,
-    itemIndex: previousItemIndex,
+    itemIndex: prevItemIndex,
     nowEpochMs: input.nowEpochMs,
   });
 }
@@ -322,22 +344,32 @@ export function createTimerSnapshot(input: {
   nowEpochMs: number;
 }): TimerSnapshot {
   const item = currentItem(input.state);
-  const currentItemIndex = input.state.currentItemIndex;
+  const levelForBlindDisplay = findLevelForBlindDisplay(
+    input.state.structure,
+    input.state.currentItemIndex,
+  );
 
   return {
     title: input.state.structure.title,
     status: input.state.status,
-    currentItemIndex,
+    currentItemIndex: input.state.currentItemIndex,
+    currentItemNumber: input.state.currentItemIndex + 1,
     totalItemCount: input.state.structure.items.length,
-    currentItemOrderText: `ITEM ${currentItemIndex + 1} / ${input.state.structure.items.length}`,
     currentItemKind: item.kind,
-    currentItemLabel: buildItemLabel(input.state.structure, currentItemIndex),
+    currentItemLabel: buildCurrentItemLabel(
+      input.state.structure,
+      input.state.currentItemIndex,
+    ),
     remainingMs: computeRemainingMs(input.state, input.nowEpochMs),
-    currentDisplayBlinds:
-      item.kind === "level" ? snapshotKinds(item.blinds) : [],
+    showBreakBanner: item.kind === "break",
+    showCurrentBlinds: item.kind === "level",
+    currentBlindGroups:
+      item.kind === "level"
+        ? createBlindGroupSnapshot(levelForBlindDisplay?.blinds ?? EMPTY_BLINDS)
+        : [],
     nextItemText: buildNextItemText(
       input.state.structure,
-      currentItemIndex,
+      input.state.currentItemIndex,
     ),
   };
 }

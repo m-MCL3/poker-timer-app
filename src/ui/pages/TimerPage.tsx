@@ -11,7 +11,7 @@ import {
 } from "@/usecases/timer/timerUsecase";
 import TimerBoard from "@/ui/components/TimerBoard";
 import BlindsPanel from "@/ui/components/BlindsPanel";
-import NextLevelPanel from "@/ui/components/NextLevelPanel";
+import NextItemPanel from "@/ui/components/NextItemPanel";
 import MenuButton from "@/ui/components/MenuButton";
 
 function pad2(value: number): string {
@@ -63,16 +63,10 @@ export default function TimerPage() {
     [nowEpochMs, timerState],
   );
 
-  const isBreak = snapshot.currentItemKind === "break";
-
   return (
     <div className="mx-auto flex min-h-screen max-w-[760px] flex-col gap-4 px-4 py-6 text-zinc-50">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">{snapshot.title}</h1>
-          <p className="text-sm text-zinc-400">{snapshot.currentItemOrderText}</p>
-          <p className="text-sm text-zinc-300">{snapshot.currentItemLabel}</p>
-        </div>
+        <h1 className="text-lg font-semibold">{snapshot.title}</h1>
         <MenuButton
           onResetRequested={() => {
             if (!confirm("Resetして idle に戻します。よろしいですか？")) {
@@ -99,7 +93,7 @@ export default function TimerPage() {
         />
       </div>
 
-      {isBreak && (
+      {snapshot.showBreakBanner && (
         <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-center text-sm font-semibold tracking-[0.2em] text-amber-100">
           BREAK TIME
         </div>
@@ -107,8 +101,9 @@ export default function TimerPage() {
 
       <TimerBoard
         status={snapshot.status}
-        levelIndex={snapshot.currentItemIndex}
-        levelCount={snapshot.totalItemCount}
+        currentItemNumber={snapshot.currentItemNumber}
+        totalItemCount={snapshot.totalItemCount}
+        currentItemLabel={snapshot.currentItemLabel}
         remainingText={formatMMSS(snapshot.remainingMs)}
         onTap={() =>
           timerStore.setState(
@@ -120,8 +115,11 @@ export default function TimerPage() {
         }
       />
 
-      {!isBreak && <BlindsPanel blinds={snapshot.currentDisplayBlinds} />}
-      <NextLevelPanel text={snapshot.nextItemText} />
+      {snapshot.showCurrentBlinds && (
+        <BlindsPanel blinds={snapshot.currentBlindGroups} />
+      )}
+
+      <NextItemPanel text={snapshot.nextItemText} />
     </div>
   );
 }

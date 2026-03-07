@@ -34,11 +34,17 @@ export class TournamentStructureStorage {
   }
 
   async save(name: string, structure: TournamentStructure): Promise<void> {
-    await this.storage.save(ITEM_KEY(name), serializeTournamentStructure(structure));
+    await this.storage.save(
+      ITEM_KEY(name),
+      serializeTournamentStructure(structure),
+    );
 
-    const names = await this.listNames();
-    const next = Array.from(new Set([...names, name]));
-    await this.storage.save(INDEX_KEY, JSON.stringify(next));
+    const currentNames = await this.listNames();
+    const nextNames = Array.from(new Set([...currentNames, name])).sort((a, b) =>
+      a.localeCompare(b),
+    );
+
+    await this.storage.save(INDEX_KEY, JSON.stringify(nextNames));
   }
 
   async load(name: string): Promise<TournamentStructure | null> {
@@ -52,7 +58,8 @@ export class TournamentStructureStorage {
 
   async remove(name: string): Promise<void> {
     await this.storage.save(ITEM_KEY(name), "");
-    const names = (await this.listNames()).filter((item) => item !== name);
-    await this.storage.save(INDEX_KEY, JSON.stringify(names));
+
+    const nextNames = (await this.listNames()).filter((item) => item !== name);
+    await this.storage.save(INDEX_KEY, JSON.stringify(nextNames));
   }
 }
