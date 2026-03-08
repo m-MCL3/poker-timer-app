@@ -10,7 +10,6 @@ export function sortPresetSummaries(
     if (left.updatedAtEpochMs !== right.updatedAtEpochMs) {
       return right.updatedAtEpochMs - left.updatedAtEpochMs;
     }
-
     return left.name.localeCompare(right.name);
   });
 }

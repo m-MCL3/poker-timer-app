@@ -1,108 +1,76 @@
-import { EMPTY_BLINDS, GAME_KIND_ORDER } from "@/domain/entities/blinds";
+import { createDefaultBlindGroups } from "@/domain/models/blinds";
 import {
-  createInitialTimerState,
-  type TimerState,
+  createInitialTimerRuntime,
+  type TimerRuntime,
   type TimerStatus,
-} from "@/domain/entities/timerState";
+} from "@/domain/models/timerRuntime";
 import {
-  assertTournamentStructure,
-  cloneTournamentStructure,
-  type TournamentStructure,
-  type TournamentStructureItem,
-} from "@/domain/entities/tournamentStructure";
+  assertTimerStructure,
+  cloneTimerStructure,
+  type LevelItem,
+  type TimerItem,
+  type TimerStructure,
+} from "@/domain/models/timerStructure";
 import type { Clock } from "@/usecases/ports/clock";
-import {
-  createBlindGroupSnapshot,
-  type TimerSnapshot,
-} from "@/usecases/timer/timerSnapshot";
-
-type TimerStoreListener = () => void;
-
-type TimerStore = {
-  getState: () => TimerState;
-  setState: (nextState: TimerState) => void;
-  subscribe: (listener: TimerStoreListener) => () => void;
-};
-
-type Dependencies = {
-  clock: Clock;
-  timerStore: TimerStore;
-};
+import type { CancelableTask, IntervalScheduler } from "@/usecases/ports/intervalScheduler";
+import type { TimerRuntimeStore, TimerSessionState } from "@/usecases/ports/timerRuntimeStore";
+import type { TimerSnapshot } from "@/usecases/timer/timerSnapshot";
+import { createBlindGroupSnapshot } from "@/usecases/timer/timerSnapshot";
 
 function clampNonNegative(value: number): number {
   return value < 0 ? 0 : value;
 }
 
-function currentItem(state: TimerState): TournamentStructureItem {
-  return state.structure.items[state.currentItemIndex] ?? state.structure.items[0];
+function currentItem(state: TimerSessionState): TimerItem {
+  return state.structure.items[state.runtime.currentIndex] ?? state.structure.items[0];
 }
 
-function currentItemDurationMs(state: TimerState): number {
-  return currentItem(state)?.durationMs ?? 0;
+function currentItemDurationMs(state: TimerSessionState): number {
+  return currentItem(state).durationSec * 1000;
 }
 
-function computeRemainingMs(state: TimerState, nowEpochMs: number): number {
-  if (state.status === "running") {
-    return clampNonNegative((state.endsAtEpochMs ?? nowEpochMs) - nowEpochMs);
+function computeRemainingMs(state: TimerSessionState, nowEpochMs: number): number {
+  if (state.runtime.status === "running") {
+    return clampNonNegative((state.runtime.endsAtEpochMs ?? nowEpochMs) - nowEpochMs);
   }
 
-  if (state.status === "paused") {
-    return clampNonNegative(state.pausedRemainingMs ?? currentItemDurationMs(state));
+  if (state.runtime.status === "paused") {
+    return clampNonNegative(
+      state.runtime.remainingMsWhenPaused ?? currentItemDurationMs(state),
+    );
   }
 
-  if (state.status === "idle") {
+  if (state.runtime.status === "idle") {
     return currentItemDurationMs(state);
   }
 
   return 0;
 }
 
-function countLevelsUpToItem(
-  structure: TournamentStructure,
-  itemIndex: number,
-): number {
+function countLevelsUpToIndex(structure: TimerStructure, itemIndex: number): number {
   let levelCount = 0;
-
   for (let index = 0; index <= itemIndex; index += 1) {
     if (structure.items[index]?.kind === "level") {
       levelCount += 1;
     }
   }
-
   return Math.max(levelCount, 1);
 }
 
-function findItemIndexByOffset(
-  structure: TournamentStructure,
-  itemIndex: number,
-  offset: -1 | 1,
-): number | null {
-  const nextIndex = itemIndex + offset;
-
-  if (nextIndex < 0 || nextIndex >= structure.items.length) {
-    return null;
-  }
-
-  return nextIndex;
+function buildBlindText(item: LevelItem): string {
+  return item.blindGroups
+    .map((group) => {
+      const sb = group.values.sb === null || group.values.sb === 0 ? "-" : String(group.values.sb);
+      const bb = group.values.bb === null || group.values.bb === 0 ? "-" : String(group.values.bb);
+      const ante =
+        group.values.ante === null || group.values.ante === 0 ? "-" : String(group.values.ante);
+      return `${group.gameKind.toUpperCase()}: ${sb} / ${bb} / ${ante}`;
+    })
+    .join(" | ");
 }
 
-function buildBlindText(item: Extract<TournamentStructureItem, { kind: "level" }>): string {
-  return GAME_KIND_ORDER.map((gameKind) => {
-    const triple = item.blinds[gameKind];
-    const sb = triple.sb === null || triple.sb === 0 ? "-" : String(triple.sb);
-    const bb = triple.bb === null || triple.bb === 0 ? "-" : String(triple.bb);
-    const ante = triple.ante === null || triple.ante === 0 ? "-" : String(triple.ante);
-
-    return `${gameKind.toUpperCase()}: ${sb} / ${bb} / ${ante}`;
-  }).join(" | ");
-}
-
-function buildCurrentItemLabel(
-  structure: TournamentStructure,
-  itemIndex: number,
-): string {
+function buildCurrentItemLabel(structure: TimerStructure, itemIndex: number): string {
   const item = structure.items[itemIndex];
-
   if (!item) {
     return "";
   }
@@ -111,15 +79,11 @@ function buildCurrentItemLabel(
     return "BREAK";
   }
 
-  return `LEVEL ${countLevelsUpToItem(structure, itemIndex)}`;
+  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex)}`;
 }
 
-function buildNextItemText(
-  structure: TournamentStructure,
-  itemIndex: number,
-): string {
+function buildNextItemText(structure: TimerStructure, itemIndex: number): string {
   const nextItem = structure.items[itemIndex + 1];
-
   if (!nextItem) {
     return "最終項目です";
   }
@@ -128,364 +92,347 @@ function buildNextItemText(
     return "BREAK";
   }
 
-  const levelNumber = countLevelsUpToItem(structure, itemIndex + 1);
-  return `LEVEL ${levelNumber} | ${buildBlindText(nextItem)}`;
+  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex + 1)} | ${buildBlindText(nextItem)}`;
 }
 
 function computeNextBreakRemainingMs(
-  state: TimerState,
+  state: TimerSessionState,
   nowEpochMs: number,
 ): number | null {
-  const { structure, currentItemIndex } = state;
-  const activeItem = structure.items[currentItemIndex];
-
-  if (!activeItem) {
-    return null;
-  }
-
+  const activeItem = currentItem(state);
   if (activeItem.kind === "break") {
     return 0;
   }
 
   let totalMs = computeRemainingMs(state, nowEpochMs);
-
-  for (let index = currentItemIndex + 1; index < structure.items.length; index += 1) {
-    const item = structure.items[index];
-
+  for (let index = state.runtime.currentIndex + 1; index < state.structure.items.length; index += 1) {
+    const item = state.structure.items[index];
     if (item.kind === "break") {
       return totalMs;
     }
-
-    totalMs += item.durationMs;
+    totalMs += item.durationSec * 1000;
   }
 
   return null;
 }
 
-function moveToItem(input: {
-  state: TimerState;
-  itemIndex: number;
-  nowEpochMs: number;
-}): TimerState {
-  const durationMs = input.state.structure.items[input.itemIndex].durationMs;
-  const baseStatus: TimerStatus =
-    input.state.status === "finished" ? "idle" : input.state.status;
-
-  if (baseStatus === "running") {
-    return {
-      ...input.state,
-      currentItemIndex: input.itemIndex,
-      endsAtEpochMs: input.nowEpochMs + durationMs,
-      pausedRemainingMs: null,
-    };
-  }
-
-  if (baseStatus === "paused") {
-    return {
-      ...input.state,
-      currentItemIndex: input.itemIndex,
-      endsAtEpochMs: null,
-      pausedRemainingMs: durationMs,
-    };
-  }
-
+function withRuntime(state: TimerSessionState, runtime: TimerRuntime): TimerSessionState {
   return {
-    ...input.state,
-    currentItemIndex: input.itemIndex,
-    status: "idle",
-    endsAtEpochMs: null,
-    pausedRemainingMs: null,
+    structure: state.structure,
+    runtime,
   };
 }
 
-function advanceRunningTimer(input: {
-  state: TimerState;
+function moveToItem(input: {
+  state: TimerSessionState;
+  itemIndex: number;
   nowEpochMs: number;
-}): TimerState {
-  if (input.state.status !== "running") {
+}): TimerSessionState {
+  const durationMs = input.state.structure.items[input.itemIndex]?.durationSec * 1000 ?? 0;
+  const baseStatus: TimerStatus =
+    input.state.runtime.status === "finished" ? "idle" : input.state.runtime.status;
+
+  if (baseStatus === "running") {
+    return withRuntime(input.state, {
+      status: "running",
+      currentIndex: input.itemIndex,
+      startedAtEpochMs: input.nowEpochMs,
+      endsAtEpochMs: input.nowEpochMs + durationMs,
+      remainingMsWhenPaused: null,
+    });
+  }
+
+  if (baseStatus === "paused") {
+    return withRuntime(input.state, {
+      status: "paused",
+      currentIndex: input.itemIndex,
+      startedAtEpochMs: null,
+      endsAtEpochMs: null,
+      remainingMsWhenPaused: durationMs,
+    });
+  }
+
+  return withRuntime(input.state, {
+    status: "idle",
+    currentIndex: input.itemIndex,
+    startedAtEpochMs: null,
+    endsAtEpochMs: null,
+    remainingMsWhenPaused: null,
+  });
+}
+
+function advanceRunningTimer(input: {
+  state: TimerSessionState;
+  nowEpochMs: number;
+}): TimerSessionState {
+  if (input.state.runtime.status !== "running") {
     return input.state;
   }
 
-  let nextState = { ...input.state };
-
-  while (nextState.status === "running") {
+  let nextState = input.state;
+  while (nextState.runtime.status === "running") {
     const remainingMs = computeRemainingMs(nextState, input.nowEpochMs);
-
     if (remainingMs > 0) {
       return nextState;
     }
 
-    const nextItemIndex = nextState.currentItemIndex + 1;
-
-    if (nextItemIndex >= nextState.structure.items.length) {
-      return {
-        ...nextState,
+    const nextIndex = nextState.runtime.currentIndex + 1;
+    if (nextIndex >= nextState.structure.items.length) {
+      return withRuntime(nextState, {
         status: "finished",
+        currentIndex: nextState.runtime.currentIndex,
+        startedAtEpochMs: null,
         endsAtEpochMs: null,
-        pausedRemainingMs: null,
-      };
+        remainingMsWhenPaused: null,
+      });
     }
 
-    nextState = {
-      ...nextState,
-      currentItemIndex: nextItemIndex,
+    const nextItem = nextState.structure.items[nextIndex];
+    nextState = withRuntime(nextState, {
       status: "running",
+      currentIndex: nextIndex,
+      startedAtEpochMs: nextState.runtime.endsAtEpochMs ?? input.nowEpochMs,
       endsAtEpochMs:
-        (nextState.endsAtEpochMs ?? input.nowEpochMs) +
-        nextState.structure.items[nextItemIndex].durationMs,
-      pausedRemainingMs: null,
-    };
+        (nextState.runtime.endsAtEpochMs ?? input.nowEpochMs) + nextItem.durationSec * 1000,
+      remainingMsWhenPaused: null,
+    });
   }
 
   return nextState;
 }
 
-export function syncTimerState(input: {
-  state: TimerState;
+function syncTimerState(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   return advanceRunningTimer(input);
 }
 
-export function startTimer(input: {
-  state: TimerState;
+function startTimer(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   const syncedState = syncTimerState(input);
-
-  return {
-    ...syncedState,
+  return withRuntime(syncedState, {
     status: "running",
+    currentIndex: syncedState.runtime.currentIndex,
+    startedAtEpochMs: input.nowEpochMs,
     endsAtEpochMs: input.nowEpochMs + currentItemDurationMs(syncedState),
-    pausedRemainingMs: null,
-  };
+    remainingMsWhenPaused: null,
+  });
 }
 
-export function pauseTimer(input: {
-  state: TimerState;
+function pauseTimer(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   const syncedState = syncTimerState(input);
-
-  if (syncedState.status !== "running") {
+  if (syncedState.runtime.status !== "running") {
     return syncedState;
   }
 
-  return {
-    ...syncedState,
+  return withRuntime(syncedState, {
     status: "paused",
+    currentIndex: syncedState.runtime.currentIndex,
+    startedAtEpochMs: null,
     endsAtEpochMs: null,
-    pausedRemainingMs: computeRemainingMs(syncedState, input.nowEpochMs),
-  };
+    remainingMsWhenPaused: computeRemainingMs(syncedState, input.nowEpochMs),
+  });
 }
 
-export function resumeTimer(input: {
-  state: TimerState;
+function resumeTimer(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   const syncedState = syncTimerState(input);
   const remainingMs =
-    syncedState.pausedRemainingMs ?? currentItemDurationMs(syncedState);
+    syncedState.runtime.remainingMsWhenPaused ?? currentItemDurationMs(syncedState);
+
+  return withRuntime(syncedState, {
+    status: "running",
+    currentIndex: syncedState.runtime.currentIndex,
+    startedAtEpochMs: input.nowEpochMs,
+    endsAtEpochMs: input.nowEpochMs + remainingMs,
+    remainingMsWhenPaused: null,
+  });
+}
+
+function toggleTimer(input: {
+  state: TimerSessionState;
+  nowEpochMs: number;
+}): TimerSessionState {
+  const syncedState = syncTimerState(input);
+
+  if (syncedState.runtime.status === "idle") {
+    return startTimer({ state: syncedState, nowEpochMs: input.nowEpochMs });
+  }
+
+  if (syncedState.runtime.status === "running") {
+    return pauseTimer({ state: syncedState, nowEpochMs: input.nowEpochMs });
+  }
+
+  if (syncedState.runtime.status === "paused") {
+    return resumeTimer({ state: syncedState, nowEpochMs: input.nowEpochMs });
+  }
 
   return {
-    ...syncedState,
-    status: "running",
-    endsAtEpochMs: input.nowEpochMs + remainingMs,
-    pausedRemainingMs: null,
+    structure: syncedState.structure,
+    runtime: createInitialTimerRuntime(),
   };
 }
 
-export function toggleTimer(input: {
-  state: TimerState;
+function tickTimer(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
-  const syncedState = syncTimerState(input);
-
-  if (syncedState.status === "idle") {
-    return startTimer({
-      state: syncedState,
-      nowEpochMs: input.nowEpochMs,
-    });
-  }
-
-  if (syncedState.status === "running") {
-    return pauseTimer({
-      state: syncedState,
-      nowEpochMs: input.nowEpochMs,
-    });
-  }
-
-  if (syncedState.status === "paused") {
-    return resumeTimer({
-      state: syncedState,
-      nowEpochMs: input.nowEpochMs,
-    });
-  }
-
-  return createInitialTimerState(syncedState.structure);
-}
-
-export function tickTimer(input: {
-  state: TimerState;
-  nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   return syncTimerState(input);
 }
 
-export function resetTimer(state: TimerState): TimerState {
-  return createInitialTimerState(state.structure);
+function resetTimer(state: TimerSessionState): TimerSessionState {
+  return {
+    structure: state.structure,
+    runtime: createInitialTimerRuntime(),
+  };
 }
 
-export function goToNextItem(input: {
-  state: TimerState;
+function goToNextItem(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   const syncedState = syncTimerState(input);
-  const nextItemIndex = findItemIndexByOffset(
-    syncedState.structure,
-    syncedState.currentItemIndex,
-    1,
-  );
-
-  if (nextItemIndex === null) {
+  const nextIndex = syncedState.runtime.currentIndex + 1;
+  if (nextIndex >= syncedState.structure.items.length) {
     return syncedState;
   }
-
-  return moveToItem({
-    state: syncedState,
-    itemIndex: nextItemIndex,
-    nowEpochMs: input.nowEpochMs,
-  });
+  return moveToItem({ state: syncedState, itemIndex: nextIndex, nowEpochMs: input.nowEpochMs });
 }
 
-export function goToPreviousItem(input: {
-  state: TimerState;
+function goToPreviousItem(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
-}): TimerState {
+}): TimerSessionState {
   const syncedState = syncTimerState(input);
-  const previousItemIndex = findItemIndexByOffset(
-    syncedState.structure,
-    syncedState.currentItemIndex,
-    -1,
-  );
-
-  if (previousItemIndex === null) {
+  const previousIndex = syncedState.runtime.currentIndex - 1;
+  if (previousIndex < 0) {
     return syncedState;
   }
-
-  return moveToItem({
-    state: syncedState,
-    itemIndex: previousItemIndex,
-    nowEpochMs: input.nowEpochMs,
-  });
+  return moveToItem({ state: syncedState, itemIndex: previousIndex, nowEpochMs: input.nowEpochMs });
 }
 
-export function replaceTournamentStructure(input: {
-  state: TimerState;
-  structure: TournamentStructure;
-}): TimerState {
-  if (input.state.status === "running") {
+function replaceTimerStructure(input: {
+  state: TimerSessionState;
+  structure: TimerStructure;
+}): TimerSessionState {
+  if (input.state.runtime.status === "running") {
     throw new Error("Timer is running. Structure cannot be applied.");
   }
 
-  const structure = assertTournamentStructure(
-    cloneTournamentStructure(input.structure),
-  );
-  const currentItemIndex = Math.min(
-    input.state.currentItemIndex,
-    structure.items.length - 1,
-  );
-  const currentDurationMs = structure.items[currentItemIndex].durationMs;
+  const structure = assertTimerStructure(cloneTimerStructure(input.structure));
+  const currentIndex = Math.min(input.state.runtime.currentIndex, structure.items.length - 1);
+  const currentDurationMs = structure.items[currentIndex]?.durationSec * 1000 ?? 0;
 
-  if (input.state.status === "paused") {
+  if (input.state.runtime.status === "paused") {
     return {
       structure,
-      status: "paused",
-      currentItemIndex,
-      endsAtEpochMs: null,
-      pausedRemainingMs: Math.min(
-        input.state.pausedRemainingMs ?? currentDurationMs,
-        currentDurationMs,
-      ),
+      runtime: {
+        status: "paused",
+        currentIndex,
+        startedAtEpochMs: null,
+        endsAtEpochMs: null,
+        remainingMsWhenPaused: Math.min(
+          input.state.runtime.remainingMsWhenPaused ?? currentDurationMs,
+          currentDurationMs,
+        ),
+      },
     };
   }
 
-  if (input.state.status === "finished") {
-    return createInitialTimerState(structure);
+  if (input.state.runtime.status === "finished") {
+    return {
+      structure,
+      runtime: createInitialTimerRuntime(),
+    };
   }
 
   return {
     structure,
-    status: input.state.status,
-    currentItemIndex,
-    endsAtEpochMs: null,
-    pausedRemainingMs: null,
+    runtime: {
+      status: input.state.runtime.status,
+      currentIndex,
+      startedAtEpochMs: null,
+      endsAtEpochMs: null,
+      remainingMsWhenPaused: null,
+    },
   };
 }
 
-export function createTimerSnapshot(input: {
-  state: TimerState;
+function createTimerSnapshot(input: {
+  state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSnapshot {
   const syncedState = syncTimerState(input);
   const item = currentItem(syncedState);
-  const currentItemIndex = syncedState.currentItemIndex;
 
   return {
-    title: syncedState.structure.title,
-    status: syncedState.status,
-    currentItemIndex,
-    currentItemNumber: currentItemIndex + 1,
+    title: syncedState.structure.name,
+    status: syncedState.runtime.status,
+    currentItemIndex: syncedState.runtime.currentIndex,
+    currentItemNumber: syncedState.runtime.currentIndex + 1,
     totalItemCount: syncedState.structure.items.length,
     currentItemKind: item.kind,
     currentItemLabel: buildCurrentItemLabel(
       syncedState.structure,
-      currentItemIndex,
+      syncedState.runtime.currentIndex,
     ),
     remainingMs: computeRemainingMs(syncedState, input.nowEpochMs),
     showBreakBanner: item.kind === "break",
     showCurrentBlinds: item.kind === "level",
     currentBlindGroups:
       item.kind === "level"
-        ? createBlindGroupSnapshot(item.blinds)
-        : createBlindGroupSnapshot(EMPTY_BLINDS),
-    nextItemText: buildNextItemText(syncedState.structure, currentItemIndex),
-    nextBreakRemainingMs: computeNextBreakRemainingMs(
-      syncedState,
-      input.nowEpochMs,
-    ),
+        ? createBlindGroupSnapshot(item.blindGroups)
+        : createBlindGroupSnapshot(createDefaultBlindGroups()),
+    nextItemText: buildNextItemText(syncedState.structure, syncedState.runtime.currentIndex),
+    nextBreakRemainingMs: computeNextBreakRemainingMs(syncedState, input.nowEpochMs),
   };
 }
 
 export class TimerUsecase {
-  private readonly clock: Clock;
-  private readonly timerStore: TimerStore;
-  private tickerId: number | null = null;
+  private tickerTask: CancelableTask | null = null;
 
-  constructor(deps: Dependencies) {
-    this.clock = deps.clock;
-    this.timerStore = deps.timerStore;
+  constructor(
+    private readonly deps: {
+      clock: Clock;
+      store: TimerRuntimeStore;
+      scheduler: IntervalScheduler;
+    },
+  ) {}
+
+  subscribe(listener: () => void): () => void {
+    return this.deps.store.subscribe(listener);
   }
 
   getSnapshot(): TimerSnapshot {
     return createTimerSnapshot({
-      state: this.timerStore.getState(),
-      nowEpochMs: this.clock.nowEpochMs(),
+      state: this.deps.store.getState(),
+      nowEpochMs: this.deps.clock.nowEpochMs(),
     });
   }
 
-  subscribe(listener: () => void): () => void {
-    return this.timerStore.subscribe(listener);
+  getStructure(): TimerStructure {
+    return cloneTimerStructure(this.deps.store.getState().structure);
+  }
+
+  getStatus(): TimerStatus {
+    return this.deps.store.getState().runtime.status;
   }
 
   startAutoTick(intervalMs = 250): () => void {
     this.stopAutoTick();
-
-    this.tickerId = window.setInterval(() => {
-      this.timerStore.setState(
+    this.tickerTask = this.deps.scheduler.start(() => {
+      this.deps.store.setState(
         tickTimer({
-          state: this.timerStore.getState(),
-          nowEpochMs: this.clock.nowEpochMs(),
+          state: this.deps.store.getState(),
+          nowEpochMs: this.deps.clock.nowEpochMs(),
         }),
       );
     }, intervalMs);
@@ -496,40 +443,49 @@ export class TimerUsecase {
   }
 
   stopAutoTick(): void {
-    if (this.tickerId !== null) {
-      window.clearInterval(this.tickerId);
-      this.tickerId = null;
+    if (this.tickerTask) {
+      this.tickerTask.cancel();
+      this.tickerTask = null;
     }
   }
 
   toggle(): void {
-    this.timerStore.setState(
+    this.deps.store.setState(
       toggleTimer({
-        state: this.timerStore.getState(),
-        nowEpochMs: this.clock.nowEpochMs(),
+        state: this.deps.store.getState(),
+        nowEpochMs: this.deps.clock.nowEpochMs(),
       }),
     );
   }
 
-  next(): void {
-    this.timerStore.setState(
+  goToNextItem(): void {
+    this.deps.store.setState(
       goToNextItem({
-        state: this.timerStore.getState(),
-        nowEpochMs: this.clock.nowEpochMs(),
+        state: this.deps.store.getState(),
+        nowEpochMs: this.deps.clock.nowEpochMs(),
       }),
     );
   }
 
-  previous(): void {
-    this.timerStore.setState(
+  goToPreviousItem(): void {
+    this.deps.store.setState(
       goToPreviousItem({
-        state: this.timerStore.getState(),
-        nowEpochMs: this.clock.nowEpochMs(),
+        state: this.deps.store.getState(),
+        nowEpochMs: this.deps.clock.nowEpochMs(),
       }),
     );
   }
 
   reset(): void {
-    this.timerStore.setState(resetTimer(this.timerStore.getState()));
+    this.deps.store.setState(resetTimer(this.deps.store.getState()));
+  }
+
+  loadStructure(structure: TimerStructure): void {
+    this.deps.store.setState(
+      replaceTimerStructure({
+        state: this.deps.store.getState(),
+        structure,
+      }),
+    );
   }
 }

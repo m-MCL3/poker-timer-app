@@ -11,25 +11,30 @@ export default function MenuButton(props: {
   const nav = useNavigate();
 
   useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
+    const onDocClick = (event: MouseEvent) => {
+      if (!ref.current) {
+        return;
+      }
+      if (!ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
+
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
   const itemBase =
-    "w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-zinc-800/60";
+    "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800/60";
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
         className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-200"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((prev) => !prev);
         }}
         aria-label="menu"
         title="Menu"

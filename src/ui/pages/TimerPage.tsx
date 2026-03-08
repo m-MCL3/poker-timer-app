@@ -21,11 +21,9 @@ function formatNextBreakText(snapshot: TimerSnapshot): string {
   if (snapshot.nextBreakRemainingMs === null) {
     return "NO BREAK";
   }
-
   if (snapshot.nextBreakRemainingMs === 0) {
     return "NOW";
   }
-
   return formatMMSS(snapshot.nextBreakRemainingMs);
 }
 
@@ -67,8 +65,8 @@ export default function TimerPage() {
             }
             timerUsecase.reset();
           }}
-          onNextRequested={() => timerUsecase.next()}
-          onPrevRequested={() => timerUsecase.previous()}
+          onNextRequested={() => timerUsecase.goToNextItem()}
+          onPrevRequested={() => timerUsecase.goToPreviousItem()}
         />
       </div>
 

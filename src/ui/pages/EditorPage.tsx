@@ -1,29 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { StructurePresetSummary } from "@/domain/entities/structurePreset";
+import { useContainer } from "@/app/composition/containerContext";
 import {
   GAME_KIND_ORDER,
   type BlindSlotId,
   type GameKindId,
-} from "@/domain/entities/blinds";
-import type { EditOperation } from "@/domain/entities/editOperation";
-import {
-  buildPresetSummaries,
-  hasPreset,
-  normalizePresetName,
-  validatePresetName,
-} from "@/usecases/preset/presetUsecase";
-import {
-  appendEditOperation,
-  createEditorSnapshot,
-  createEditorState,
-  materializeEditorStructure,
-  replaceEditorBaseStructure,
-  resetEditorChanges,
-  type EditorState,
-} from "@/usecases/editor/editorUsecase";
-import { replaceTournamentStructure } from "@/usecases/timer/timerUsecase";
-import { useContainer } from "@/app/composition/containerContext";
+} from "@/domain/models/blinds";
+import type { StructurePresetSummary } from "@/domain/models/preset";
+import type { EditOperation } from "@/domain/models/editorState";
+import { normalizePresetName, validatePresetName } from "@/usecases/preset/presetUsecase";
 import "./editor-table.css";
 
 function parseBlindValue(value: string): number | null {
@@ -34,6 +19,10 @@ function parseBlindValue(value: string): number | null {
 
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function hasPreset(presets: StructurePresetSummary[], name: string): boolean {
+  return presets.some((preset) => preset.name === name);
 }
 
 function formatPresetLabel(preset: StructurePresetSummary): string {
@@ -53,48 +42,46 @@ function formatPresetLabel(preset: StructurePresetSummary): string {
 
 export default function EditorPage() {
   const navigate = useNavigate();
-  const { timerStore, structureStorage } = useContainer();
+  const { timerUsecase, editorUsecase, presetUsecase } = useContainer();
 
-  const [editorState, setEditorState] = useState<EditorState>(() =>
-    createEditorState({
-      structure: timerStore.getState().structure,
-      isEditable: timerStore.getState().status !== "running",
-    }),
-  );
   const [presets, setPresets] = useState<StructurePresetSummary[]>([]);
   const [saveName, setSaveName] = useState("");
   const [loadName, setLoadName] = useState("");
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    return timerStore.subscribe(() => {
-      const timerState = timerStore.getState();
-      setEditorState((prev) => ({
-        ...prev,
-        isEditable: timerState.status !== "running",
-      }));
-    });
-  }, [timerStore]);
+    editorUsecase.replaceBaseStructure(timerUsecase.getStructure());
+    editorUsecase.syncEditable(timerUsecase.getStatus() !== "running");
 
-  const snapshot = useMemo(
-    () => createEditorSnapshot(editorState),
-    [editorState],
-  );
+    const unsubscribeEditor = editorUsecase.subscribe(() => {
+      setRevision((prev) => prev + 1);
+    });
+
+    const unsubscribeTimer = timerUsecase.subscribe(() => {
+      editorUsecase.syncEditable(timerUsecase.getStatus() !== "running");
+    });
+
+    return () => {
+      unsubscribeTimer();
+      unsubscribeEditor();
+    };
+  }, [editorUsecase, timerUsecase]);
+
+  const snapshot = useMemo(() => editorUsecase.getSnapshot(), [editorUsecase, revision]);
 
   async function refreshPresets(): Promise<void> {
-    const nextPresets = await structureStorage.listPresets();
-    setPresets(buildPresetSummaries(nextPresets));
+    setPresets(await presetUsecase.listSummaries());
   }
 
   useEffect(() => {
     void refreshPresets();
-  }, [structureStorage]);
+  }, [presetUsecase]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!snapshot.isDirty) {
         return;
       }
-
       event.preventDefault();
       event.returnValue = "";
     };
@@ -104,12 +91,7 @@ export default function EditorPage() {
   }, [snapshot.isDirty]);
 
   function pushOperation(operation: EditOperation): void {
-    setEditorState((prev) =>
-      appendEditOperation({
-        state: prev,
-        operation,
-      }),
-    );
+    editorUsecase.applyOperation(operation);
   }
 
   function backWithGuard(): void {
@@ -125,7 +107,7 @@ export default function EditorPage() {
       return;
     }
 
-    setEditorState((prev) => resetEditorChanges(prev));
+    editorUsecase.cancel();
     navigate("/");
   }
 
@@ -135,20 +117,9 @@ export default function EditorPage() {
     }
 
     try {
-      const nextTimerState = replaceTournamentStructure({
-        state: timerStore.getState(),
-        structure: materializeEditorStructure(editorState),
-      });
-
-      timerStore.setState(nextTimerState);
-
-      setEditorState((prev) =>
-        replaceEditorBaseStructure({
-          state: prev,
-          structure: nextTimerState.structure,
-        }),
-      );
-
+      const nextStructure = editorUsecase.materialize();
+      timerUsecase.loadStructure(nextStructure);
+      editorUsecase.replaceBaseStructure(timerUsecase.getStructure());
       navigate("/");
     } catch (error) {
       alert(error instanceof Error ? error.message : "Apply failed.");
@@ -162,7 +133,6 @@ export default function EditorPage() {
 
     const normalizedName = normalizePresetName(saveName);
     const validationError = validatePresetName(normalizedName);
-
     if (validationError) {
       alert(validationError);
       return;
@@ -172,17 +142,12 @@ export default function EditorPage() {
       const isAccepted = confirm(
         `プリセット「${normalizedName}」は既に存在します。上書きしますか？`,
       );
-
       if (!isAccepted) {
         return;
       }
     }
 
-    await structureStorage.savePreset(
-      normalizedName,
-      materializeEditorStructure(editorState),
-    );
-
+    await presetUsecase.savePreset(normalizedName, editorUsecase.materialize());
     setSaveName("");
     setLoadName(normalizedName);
     await refreshPresets();
@@ -203,32 +168,20 @@ export default function EditorPage() {
       const isAccepted = confirm(
         "未適用の変更があります。破棄してプリセットを読み込みますか？",
       );
-
       if (!isAccepted) {
         return;
       }
     }
 
-    const loaded = await structureStorage.loadPreset(normalizedName);
+    const loaded = await presetUsecase.loadPreset(normalizedName);
     if (!loaded) {
       alert("プリセットの読み込みに失敗しました。");
       return;
     }
 
     try {
-      const nextTimerState = replaceTournamentStructure({
-        state: timerStore.getState(),
-        structure: loaded,
-      });
-
-      timerStore.setState(nextTimerState);
-
-      setEditorState((prev) =>
-        replaceEditorBaseStructure({
-          state: prev,
-          structure: nextTimerState.structure,
-        }),
-      );
+      timerUsecase.loadStructure(loaded);
+      editorUsecase.replaceBaseStructure(timerUsecase.getStructure());
     } catch (error) {
       alert(error instanceof Error ? error.message : "プリセットの適用に失敗しました。");
     }
@@ -249,14 +202,12 @@ export default function EditorPage() {
       `プリセット「${currentName}」の新しい名前を入力してください。`,
       currentName,
     );
-
     if (inputName === null) {
       return;
     }
 
     const nextName = normalizePresetName(inputName);
     const validationError = validatePresetName(nextName);
-
     if (validationError) {
       alert(validationError);
       return;
@@ -271,7 +222,7 @@ export default function EditorPage() {
       return;
     }
 
-    await structureStorage.renamePreset(currentName, nextName);
+    await presetUsecase.renamePreset(currentName, nextName);
     setLoadName(nextName);
     await refreshPresets();
   }
@@ -290,12 +241,11 @@ export default function EditorPage() {
     const isAccepted = confirm(
       `プリセット「${normalizedName}」を削除します。よろしいですか？`,
     );
-
     if (!isAccepted) {
       return;
     }
 
-    await structureStorage.deletePreset(normalizedName);
+    await presetUsecase.deletePreset(normalizedName);
     setLoadName("");
     await refreshPresets();
   }
@@ -310,9 +260,7 @@ export default function EditorPage() {
             「－」で行削除。TypeでLevel/Break切替。
           </p>
           {snapshot.isEditable ? null : (
-            <p className="editor-readonly-message">
-              running中は参照のみです。
-            </p>
+            <p className="editor-readonly-message">running中は参照のみです。</p>
           )}
         </div>
 
@@ -540,7 +488,7 @@ export default function EditorPage() {
       <div className="editor-footer">
         <button
           type="button"
-          onClick={() => setEditorState((prev) => resetEditorChanges(prev))}
+          onClick={() => editorUsecase.cancel()}
           disabled={!snapshot.isDirty}
         >
           Cancel

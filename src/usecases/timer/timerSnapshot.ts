@@ -1,5 +1,9 @@
-import { formatBlindValue, type BlindsByGame, type GameKindId } from "@/domain/entities/blinds";
-import type { TimerStatus } from "@/domain/entities/timerState";
+import {
+  formatBlindValue,
+  type BlindGroup,
+  type GameKindId,
+} from "@/domain/models/blinds";
+import type { TimerStatus } from "@/domain/models/timerRuntime";
 
 export type SnapshotBlindGroup = {
   gameKind: GameKindId;
@@ -26,13 +30,13 @@ export type TimerSnapshot = {
   nextBreakRemainingMs: number | null;
 };
 
-export function createBlindGroupSnapshot(blinds: BlindsByGame): SnapshotBlindGroup[] {
-  return (["fl", "stud", "nlpl"] as const).map((gameKind) => ({
-    gameKind,
+export function createBlindGroupSnapshot(blindGroups: BlindGroup[]): SnapshotBlindGroup[] {
+  return blindGroups.map((group) => ({
+    gameKind: group.gameKind,
     blinds: {
-      sb: formatBlindValue(blinds[gameKind].sb),
-      bb: formatBlindValue(blinds[gameKind].bb),
-      ante: formatBlindValue(blinds[gameKind].ante),
+      sb: formatBlindValue(group.values.sb),
+      bb: formatBlindValue(group.values.bb),
+      ante: formatBlindValue(group.values.ante),
     },
   }));
 }

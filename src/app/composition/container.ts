@@ -1,63 +1,56 @@
 import { SystemClock } from "@/adapters/clock/systemClock";
-import { sampleTournamentStructure } from "@/adapters/mock/sampleTournamentStructure";
-import { LocalStorageStorage } from "@/adapters/storage/localStorageStorage";
-import {
-  createInitialTimerState,
-  type TimerState,
-} from "@/domain/entities/timerState";
-import { TournamentStructureStorage } from "@/infrastructure/persistence/tournamentStructureStorage";
-import type { StoragePort } from "@/usecases/ports/storage";
+import { RandomIdGenerator } from "@/adapters/ids/randomIdGenerator";
+import { sampleTimerStructure } from "@/adapters/mock/sampleTimerStructure";
+import { BrowserIntervalScheduler } from "@/adapters/scheduler/browserIntervalScheduler";
+import { LocalStorageKeyValueStore } from "@/adapters/storage/localStorageKeyValueStore";
+import { createInitialTimerRuntime } from "@/domain/models/timerRuntime";
+import { cloneTimerStructure } from "@/domain/models/timerStructure";
+import { TimerStructureRepository } from "@/infrastructure/persistence/timerStructureRepository";
+import { InMemoryTimerRuntimeStore } from "@/infrastructure/runtime/inMemoryTimerRuntimeStore";
+import { EditorUsecase } from "@/usecases/editor/editorUsecase";
+import { PresetUsecase } from "@/usecases/preset/presetUsecase";
 import { TimerUsecase } from "@/usecases/timer/timerUsecase";
 
-type TimerStoreListener = () => void;
-
-export type TimerStore = {
-  getState: () => TimerState;
-  setState: (nextState: TimerState) => void;
-  subscribe: (listener: TimerStoreListener) => () => void;
-};
-
-function createTimerStore(initialState: TimerState): TimerStore {
-  let state = initialState;
-  const listeners = new Set<TimerStoreListener>();
-
-  return {
-    getState: () => state,
-    setState: (nextState) => {
-      state = nextState;
-      listeners.forEach((listener) => listener());
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
-
 export type AppContainer = {
-  clock: SystemClock;
-  storage: StoragePort;
-  timerStore: TimerStore;
-  structureStorage: TournamentStructureStorage;
   timerUsecase: TimerUsecase;
+  editorUsecase: EditorUsecase;
+  presetUsecase: PresetUsecase;
 };
 
 export function createContainer(): AppContainer {
   const clock = new SystemClock();
-  const storage: StoragePort = new LocalStorageStorage();
-  const timerStore = createTimerStore(
-    createInitialTimerState(sampleTournamentStructure),
+  const idGenerator = new RandomIdGenerator();
+  const scheduler = new BrowserIntervalScheduler();
+  const keyValueStore = new LocalStorageKeyValueStore();
+  const repository = new TimerStructureRepository(keyValueStore, () => clock.nowEpochMs());
+  const runtimeStore = new InMemoryTimerRuntimeStore({
+    structure: cloneTimerStructure(sampleTimerStructure),
+    runtime: createInitialTimerRuntime(),
+  });
+
+  const timerUsecase = new TimerUsecase({
+    clock,
+    store: runtimeStore,
+    scheduler,
+  });
+
+  const editorUsecase = new EditorUsecase(
+    {
+      structure: timerUsecase.getStructure(),
+      isEditable: timerUsecase.getStatus() !== "running",
+    },
+    idGenerator,
   );
-  const structureStorage = new TournamentStructureStorage(storage);
-  const timerUsecase = new TimerUsecase({ clock, timerStore });
+
+  timerUsecase.subscribe(() => {
+    editorUsecase.syncEditable(timerUsecase.getStatus() !== "running");
+  });
+
+  const presetUsecase = new PresetUsecase(repository);
 
   return {
-    clock,
-    storage,
-    timerStore,
-    structureStorage,
     timerUsecase,
+    editorUsecase,
+    presetUsecase,
   };
 }

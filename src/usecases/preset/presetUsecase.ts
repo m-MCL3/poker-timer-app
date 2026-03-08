@@ -1,5 +1,7 @@
-import type { StructurePresetSummary } from "@/domain/entities/structurePreset";
-import { sortPresetSummaries } from "@/domain/entities/structurePreset";
+import type { StructurePresetSummary } from "@/domain/models/preset";
+import { sortPresetSummaries } from "@/domain/models/preset";
+import type { TimerStructure } from "@/domain/models/timerStructure";
+import type { TimerStructurePresetRepository } from "@/usecases/ports/timerStructurePresetRepository";
 
 export function normalizePresetName(name: string): string {
   return name.trim();
@@ -9,29 +11,6 @@ export function validatePresetName(name: string): string | null {
   if (!name.trim()) {
     return "プリセット名を入力してください。";
   }
-
-  return null;
-}
-
-export function validateRenamePresetName(input: {
-  currentName: string;
-  nextName: string;
-}): string | null {
-  const currentName = normalizePresetName(input.currentName);
-  const nextName = normalizePresetName(input.nextName);
-
-  if (!currentName) {
-    return "変更元のプリセットを選択してください。";
-  }
-
-  if (!nextName) {
-    return "変更後のプリセット名を入力してください。";
-  }
-
-  if (currentName === nextName) {
-    return "変更後のプリセット名が同じです。";
-  }
-
   return null;
 }
 
@@ -43,8 +22,29 @@ export function hasPreset(
   return presets.some((preset) => preset.name === normalized);
 }
 
-export function buildPresetSummaries(
-  presets: StructurePresetSummary[],
-): StructurePresetSummary[] {
-  return sortPresetSummaries(presets);
+export class PresetUsecase {
+  constructor(private readonly repository: TimerStructurePresetRepository) {}
+
+  async listSummaries(): Promise<StructurePresetSummary[]> {
+    return sortPresetSummaries(await this.repository.listPresets());
+  }
+
+  async savePreset(name: string, structure: TimerStructure): Promise<void> {
+    await this.repository.savePreset(normalizePresetName(name), structure);
+  }
+
+  async loadPreset(name: string): Promise<TimerStructure | null> {
+    return this.repository.loadPreset(normalizePresetName(name));
+  }
+
+  async renamePreset(currentName: string, nextName: string): Promise<void> {
+    await this.repository.renamePreset(
+      normalizePresetName(currentName),
+      normalizePresetName(nextName),
+    );
+  }
+
+  async deletePreset(name: string): Promise<void> {
+    await this.repository.deletePreset(normalizePresetName(name));
+  }
 }

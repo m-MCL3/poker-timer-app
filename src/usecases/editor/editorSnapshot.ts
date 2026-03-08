@@ -1,4 +1,4 @@
-import type { GameKindId } from "@/domain/entities/blinds";
+import type { GameKindId } from "@/domain/models/blinds";
 
 export type EditorBlindCellSnapshot = {
   gameKind: GameKindId;

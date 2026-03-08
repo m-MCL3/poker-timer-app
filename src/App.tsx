@@ -1,7 +1,7 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import TimerPage from "@/ui/pages/TimerPage";
+import { Navigate, Route, Routes } from "react-router-dom";
 import EditorPage from "@/ui/pages/EditorPage";
 import SettingsPage from "@/ui/pages/SettingsPage";
+import TimerPage from "@/ui/pages/TimerPage";
 
 export default function App() {
   return (
