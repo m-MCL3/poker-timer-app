@@ -1,10 +1,21 @@
-import { createContext, useContext, useMemo, type PropsWithChildren } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  type PropsWithChildren,
+} from "react";
 import { createContainer, type AppContainer } from "@/app/composition/container";
 
 const ContainerContext = createContext<AppContainer | null>(null);
 
 export function ContainerProvider(props: PropsWithChildren) {
   const container = useMemo(() => createContainer(), []);
+
+  useEffect(() => {
+    return container.timerController.start();
+  }, [container]);
+
   return (
     <ContainerContext.Provider value={container}>
       {props.children}

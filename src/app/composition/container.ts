@@ -2,16 +2,17 @@ import { BrowserIntervalScheduler } from "@/adapters/clock/browserIntervalSchedu
 import { SystemClock } from "@/adapters/clock/systemClock";
 import { defaultTimerStructure } from "@/adapters/mock/defaultTimerStructure";
 import { LocalStorageStorage } from "@/adapters/storage/localStorageStorage";
+import { createInitialTimerRuntime } from "@/domain/models/timerRuntime";
+import { TimerPresetRepository } from "@/infrastructure/persistence/timerPresetRepository";
 import { EditorUsecase } from "@/usecases/editor/editorUsecase";
 import { PresetUsecase } from "@/usecases/preset/presetUsecase";
-import { createInitialTimerRuntime } from "@/domain/models/timerRuntime";
 import type {
   RuntimeStoreListener,
   TimerRuntimeStore,
   TimerSessionState,
 } from "@/usecases/ports/runtimeStore";
+import { TimerController } from "@/usecases/timer/timerController";
 import { TimerUsecase } from "@/usecases/timer/timerUsecase";
-import { TimerPresetRepository } from "@/infrastructure/persistence/timerPresetRepository";
 
 function createRuntimeStore(initialState: TimerSessionState): TimerRuntimeStore {
   let state = initialState;
@@ -34,6 +35,7 @@ function createRuntimeStore(initialState: TimerSessionState): TimerRuntimeStore 
 
 export type AppContainer = {
   timerUsecase: TimerUsecase;
+  timerController: TimerController;
   editorUsecase: EditorUsecase;
   presetUsecase: PresetUsecase;
 };
@@ -51,8 +53,13 @@ export function createContainer(): AppContainer {
 
   const timerUsecase = new TimerUsecase({
     clock,
-    scheduler,
     store: runtimeStore,
+  });
+
+  const timerController = new TimerController({
+    scheduler,
+    timerUsecase,
+    tickIntervalMs: 250,
   });
 
   const editorUsecase = new EditorUsecase();
@@ -60,6 +67,7 @@ export function createContainer(): AppContainer {
 
   return {
     timerUsecase,
+    timerController,
     editorUsecase,
     presetUsecase,
   };

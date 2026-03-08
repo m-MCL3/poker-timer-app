@@ -11,15 +11,9 @@ export default function TimerPage() {
 
   useEffect(() => {
     setSnapshot(timerUsecase.getSnapshot());
-    const unsubscribe = timerUsecase.subscribe(() => {
+    return timerUsecase.subscribe(() => {
       setSnapshot(timerUsecase.getSnapshot());
     });
-    const stopAutoTick = timerUsecase.startAutoTick(250);
-
-    return () => {
-      stopAutoTick();
-      unsubscribe();
-    };
   }, [timerUsecase]);
 
   return (

@@ -30,16 +30,17 @@ export type TimerSnapshot = {
   nextItemText: string;
   nextBreakRemainingMs: number | null;
   nextBreakText: string;
+  progressPercent: number;
 };
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
 }
 
-export function formatDurationText(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
+export function formatDurationText(durationMs: number): string {
+  const totalSeconds = Math.floor(Math.max(0, durationMs) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
   return `${pad2(minutes)}:${pad2(seconds)}`;
 }
 

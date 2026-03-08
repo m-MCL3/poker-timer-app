@@ -6,22 +6,20 @@ import {
 } from "@/domain/models/timerRuntime";
 import {
   assertTimerStructure,
-  buildDerivedItemName,
   cloneTimerStructure,
-  countLevelsUpToIndex,
-  type LevelItem,
   type TimerItem,
   type TimerStructure,
 } from "@/domain/models/timerStructure";
 import type { Clock } from "@/usecases/ports/clock";
 import type {
-  CancelableTask,
-  IntervalScheduler,
-} from "@/usecases/ports/intervalScheduler";
-import type {
   TimerRuntimeStore,
   TimerSessionState,
 } from "@/usecases/ports/runtimeStore";
+import { compileStructure } from "@/usecases/timer/compileStructure";
+import {
+  sumDurationRangeMs,
+  type StructureCache,
+} from "@/usecases/timer/structureCache";
 import {
   createBlindGroupSnapshot,
   formatDurationText,
@@ -37,90 +35,6 @@ function currentItem(state: TimerSessionState): TimerItem {
   return state.structure.items[state.runtime.currentIndex] ?? state.structure.items[0];
 }
 
-function currentItemDurationMs(state: TimerSessionState): number {
-  return currentItem(state).durationSec * 1000;
-}
-
-function computeRemainingMs(state: TimerSessionState, nowEpochMs: number): number {
-  if (state.runtime.status === "running") {
-    return clampNonNegative((state.runtime.endsAtEpochMs ?? nowEpochMs) - nowEpochMs);
-  }
-
-  if (state.runtime.status === "paused") {
-    return clampNonNegative(
-      state.runtime.remainingMsWhenPaused ?? currentItemDurationMs(state),
-    );
-  }
-
-  if (state.runtime.status === "idle") {
-    return currentItemDurationMs(state);
-  }
-
-  return 0;
-}
-
-function buildBlindText(item: LevelItem): string {
-  return item.blindGroups
-    .map((group) => {
-      const sb =
-        group.values.sb === null || group.values.sb === 0
-          ? "-"
-          : String(group.values.sb);
-      const bb =
-        group.values.bb === null || group.values.bb === 0
-          ? "-"
-          : String(group.values.bb);
-      const ante =
-        group.values.ante === null || group.values.ante === 0
-          ? "-"
-          : String(group.values.ante);
-
-      return `${group.gameKind.toUpperCase()}: ${sb} / ${bb} / ${ante}`;
-    })
-    .join(" | ");
-}
-
-function buildNextItemText(structure: TimerStructure, itemIndex: number): string {
-  const nextItem = structure.items[itemIndex + 1];
-  if (!nextItem) {
-    return "最終項目です";
-  }
-
-  if (nextItem.kind === "break") {
-    return "BREAK";
-  }
-
-  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex + 1)} | ${buildBlindText(
-    nextItem,
-  )}`;
-}
-
-function computeNextBreakRemainingMs(
-  state: TimerSessionState,
-  nowEpochMs: number,
-): number | null {
-  const activeItem = currentItem(state);
-  if (activeItem.kind === "break") {
-    return 0;
-  }
-
-  let totalMs = computeRemainingMs(state, nowEpochMs);
-
-  for (
-    let index = state.runtime.currentIndex + 1;
-    index < state.structure.items.length;
-    index += 1
-  ) {
-    const item = state.structure.items[index];
-    if (item.kind === "break") {
-      return totalMs;
-    }
-    totalMs += item.durationSec * 1000;
-  }
-
-  return null;
-}
-
 function withRuntime(state: TimerSessionState, runtime: TimerRuntime): TimerSessionState {
   return {
     structure: state.structure,
@@ -128,13 +42,83 @@ function withRuntime(state: TimerSessionState, runtime: TimerRuntime): TimerSess
   };
 }
 
+function computeRemainingMs(input: {
+  state: TimerSessionState;
+  cache: StructureCache;
+  nowEpochMs: number;
+}): number {
+  const currentDurationMs =
+    input.cache.itemDurationsMs[input.state.runtime.currentIndex] ?? 0;
+
+  if (input.state.runtime.status === "running") {
+    return clampNonNegative(
+      (input.state.runtime.endsAtEpochMs ?? input.nowEpochMs) - input.nowEpochMs,
+    );
+  }
+
+  if (input.state.runtime.status === "paused") {
+    return clampNonNegative(
+      input.state.runtime.remainingMsWhenPaused ?? currentDurationMs,
+    );
+  }
+
+  if (input.state.runtime.status === "idle") {
+    return currentDurationMs;
+  }
+
+  return 0;
+}
+
+function computeProgressPercent(input: {
+  state: TimerSessionState;
+  cache: StructureCache;
+  remainingMs: number;
+}): number {
+  const totalDurationMs =
+    input.cache.itemDurationsMs[input.state.runtime.currentIndex] ?? 0;
+
+  if (totalDurationMs <= 0) {
+    return 0;
+  }
+
+  const elapsedMs = totalDurationMs - input.remainingMs;
+  return Math.min(100, Math.max(0, (elapsedMs / totalDurationMs) * 100));
+}
+
+function computeNextBreakRemainingMs(input: {
+  state: TimerSessionState;
+  cache: StructureCache;
+  nowEpochMs: number;
+}): number | null {
+  const activeItem = currentItem(input.state);
+  if (activeItem.kind === "break") {
+    return 0;
+  }
+
+  const nextBreakIndex =
+    input.cache.nextBreakIndexByItemIndex[input.state.runtime.currentIndex];
+
+  if (nextBreakIndex === null) {
+    return null;
+  }
+
+  const currentRemainingMs = computeRemainingMs(input);
+  const betweenMs = sumDurationRangeMs(
+    input.cache,
+    input.state.runtime.currentIndex + 1,
+    nextBreakIndex - 1,
+  );
+
+  return currentRemainingMs + betweenMs;
+}
+
 function moveToItem(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   itemIndex: number;
   nowEpochMs: number;
 }): TimerSessionState {
-  const targetItem = input.state.structure.items[input.itemIndex];
-  const durationMs = targetItem ? targetItem.durationSec * 1000 : 0;
+  const durationMs = input.cache.itemDurationsMs[input.itemIndex] ?? 0;
   const baseStatus: TimerStatus =
     input.state.runtime.status === "finished"
       ? "idle"
@@ -171,6 +155,7 @@ function moveToItem(input: {
 
 function advanceRunningTimer(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   if (input.state.runtime.status !== "running") {
@@ -180,7 +165,12 @@ function advanceRunningTimer(input: {
   let nextState = input.state;
 
   while (nextState.runtime.status === "running") {
-    const remainingMs = computeRemainingMs(nextState, input.nowEpochMs);
+    const remainingMs = computeRemainingMs({
+      state: nextState,
+      cache: input.cache,
+      nowEpochMs: input.nowEpochMs,
+    });
+
     if (remainingMs > 0) {
       return nextState;
     }
@@ -196,14 +186,14 @@ function advanceRunningTimer(input: {
       });
     }
 
-    const nextItem = nextState.structure.items[nextIndex];
+    const nextDurationMs = input.cache.itemDurationsMs[nextIndex] ?? 0;
     const startEpochMs = nextState.runtime.endsAtEpochMs ?? input.nowEpochMs;
 
     nextState = withRuntime(nextState, {
       status: "running",
       currentIndex: nextIndex,
       startedAtEpochMs: startEpochMs,
-      endsAtEpochMs: startEpochMs + nextItem.durationSec * 1000,
+      endsAtEpochMs: startEpochMs + nextDurationMs,
       remainingMsWhenPaused: null,
     });
   }
@@ -213,6 +203,7 @@ function advanceRunningTimer(input: {
 
 function syncState(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   return advanceRunningTimer(input);
@@ -220,21 +211,25 @@ function syncState(input: {
 
 function startTimer(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
+  const currentDurationMs =
+    input.cache.itemDurationsMs[synced.runtime.currentIndex] ?? 0;
 
   return withRuntime(synced, {
     status: "running",
     currentIndex: synced.runtime.currentIndex,
     startedAtEpochMs: input.nowEpochMs,
-    endsAtEpochMs: input.nowEpochMs + currentItemDurationMs(synced),
+    endsAtEpochMs: input.nowEpochMs + currentDurationMs,
     remainingMsWhenPaused: null,
   });
 }
 
 function pauseTimer(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
@@ -247,17 +242,24 @@ function pauseTimer(input: {
     currentIndex: synced.runtime.currentIndex,
     startedAtEpochMs: null,
     endsAtEpochMs: null,
-    remainingMsWhenPaused: computeRemainingMs(synced, input.nowEpochMs),
+    remainingMsWhenPaused: computeRemainingMs({
+      state: synced,
+      cache: input.cache,
+      nowEpochMs: input.nowEpochMs,
+    }),
   });
 }
 
 function resumeTimer(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
+  const currentDurationMs =
+    input.cache.itemDurationsMs[synced.runtime.currentIndex] ?? 0;
   const remainingMs =
-    synced.runtime.remainingMsWhenPaused ?? currentItemDurationMs(synced);
+    synced.runtime.remainingMsWhenPaused ?? currentDurationMs;
 
   return withRuntime(synced, {
     status: "running",
@@ -270,20 +272,33 @@ function resumeTimer(input: {
 
 function toggleTimer(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
 
   if (synced.runtime.status === "idle") {
-    return startTimer({ state: synced, nowEpochMs: input.nowEpochMs });
+    return startTimer({
+      state: synced,
+      cache: input.cache,
+      nowEpochMs: input.nowEpochMs,
+    });
   }
 
   if (synced.runtime.status === "running") {
-    return pauseTimer({ state: synced, nowEpochMs: input.nowEpochMs });
+    return pauseTimer({
+      state: synced,
+      cache: input.cache,
+      nowEpochMs: input.nowEpochMs,
+    });
   }
 
   if (synced.runtime.status === "paused") {
-    return resumeTimer({ state: synced, nowEpochMs: input.nowEpochMs });
+    return resumeTimer({
+      state: synced,
+      cache: input.cache,
+      nowEpochMs: input.nowEpochMs,
+    });
   }
 
   return {
@@ -294,6 +309,7 @@ function toggleTimer(input: {
 
 function tickTimer(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   return syncState(input);
@@ -308,6 +324,7 @@ function resetTimer(state: TimerSessionState): TimerSessionState {
 
 function goToNextItem(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
@@ -319,6 +336,7 @@ function goToNextItem(input: {
 
   return moveToItem({
     state: synced,
+    cache: input.cache,
     itemIndex: nextIndex,
     nowEpochMs: input.nowEpochMs,
   });
@@ -326,6 +344,7 @@ function goToNextItem(input: {
 
 function goToPreviousItem(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
@@ -337,6 +356,7 @@ function goToPreviousItem(input: {
 
   return moveToItem({
     state: synced,
+    cache: input.cache,
     itemIndex: previousIndex,
     nowEpochMs: input.nowEpochMs,
   });
@@ -344,6 +364,7 @@ function goToPreviousItem(input: {
 
 function applyEditedStructure(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   structure: TimerStructure;
 }): TimerSessionState {
   if (input.state.runtime.status === "running") {
@@ -355,8 +376,7 @@ function applyEditedStructure(input: {
     input.state.runtime.currentIndex,
     structure.items.length - 1,
   );
-  const currentItem = structure.items[currentIndex];
-  const currentDurationMs = currentItem ? currentItem.durationSec * 1000 : 0;
+  const currentDurationMs = input.cache.itemDurationsMs[currentIndex] ?? 0;
 
   if (input.state.runtime.status === "paused") {
     return {
@@ -406,12 +426,21 @@ function loadPresetStructure(input: {
 
 function createSnapshot(input: {
   state: TimerSessionState;
+  cache: StructureCache;
   nowEpochMs: number;
 }): TimerSnapshot {
   const synced = syncState(input);
   const item = currentItem(synced);
-  const remainingMs = computeRemainingMs(synced, input.nowEpochMs);
-  const nextBreakRemainingMs = computeNextBreakRemainingMs(synced, input.nowEpochMs);
+  const remainingMs = computeRemainingMs({
+    state: synced,
+    cache: input.cache,
+    nowEpochMs: input.nowEpochMs,
+  });
+  const nextBreakRemainingMs = computeNextBreakRemainingMs({
+    state: synced,
+    cache: input.cache,
+    nowEpochMs: input.nowEpochMs,
+  });
 
   return {
     title: synced.structure.name,
@@ -420,10 +449,7 @@ function createSnapshot(input: {
     currentItemNumber: synced.runtime.currentIndex + 1,
     totalItemCount: synced.structure.items.length,
     currentItemKind: item.kind,
-    currentItemLabel: buildDerivedItemName(
-      synced.structure,
-      synced.runtime.currentIndex,
-    ),
+    currentItemLabel: input.cache.itemLabels[synced.runtime.currentIndex] ?? "",
     remainingMs,
     remainingText: formatDurationText(remainingMs),
     showBreakBanner: item.kind === "break",
@@ -432,30 +458,55 @@ function createSnapshot(input: {
       item.kind === "level"
         ? createBlindGroupSnapshot(item.blindGroups)
         : createBlindGroupSnapshot(createDefaultBlindGroups()),
-    nextItemText: buildNextItemText(synced.structure, synced.runtime.currentIndex),
+    nextItemText:
+      input.cache.nextItemTextByIndex[synced.runtime.currentIndex] ?? "最終項目です",
     nextBreakRemainingMs,
     nextBreakText: formatNextBreakText(nextBreakRemainingMs),
+    progressPercent: computeProgressPercent({
+      state: synced,
+      cache: input.cache,
+      remainingMs,
+    }),
   };
 }
 
 export class TimerUsecase {
-  private tickerTask: CancelableTask | null = null;
+  private compiled:
+    | {
+        structureRef: TimerStructure;
+        cache: StructureCache;
+      }
+    | null = null;
 
   constructor(
     private readonly deps: {
       clock: Clock;
       store: TimerRuntimeStore;
-      scheduler: IntervalScheduler;
     },
   ) {}
+
+  private getCache(structure: TimerStructure): StructureCache {
+    if (this.compiled?.structureRef === structure) {
+      return this.compiled.cache;
+    }
+
+    const cache = compileStructure(structure);
+    this.compiled = {
+      structureRef: structure,
+      cache,
+    };
+    return cache;
+  }
 
   subscribe(listener: () => void): () => void {
     return this.deps.store.subscribe(listener);
   }
 
   getSnapshot(): TimerSnapshot {
+    const state = this.deps.store.getState();
     return createSnapshot({
-      state: this.deps.store.getState(),
+      state,
+      cache: this.getCache(state.structure),
       nowEpochMs: this.deps.clock.nowEpochMs(),
     });
   }
@@ -472,51 +523,45 @@ export class TimerUsecase {
     return this.getStatus() !== "running";
   }
 
-  startAutoTick(intervalMs = 250): () => void {
-    this.stopAutoTick();
-    this.tickerTask = this.deps.scheduler.start(() => {
-      this.deps.store.setState(
-        tickTimer({
-          state: this.deps.store.getState(),
-          nowEpochMs: this.deps.clock.nowEpochMs(),
-        }),
-      );
-    }, intervalMs);
-
-    return () => this.stopAutoTick();
-  }
-
-  stopAutoTick(): void {
-    if (!this.tickerTask) {
-      return;
-    }
-
-    this.tickerTask.cancel();
-    this.tickerTask = null;
+  tick(): void {
+    const state = this.deps.store.getState();
+    this.deps.store.setState(
+      tickTimer({
+        state,
+        cache: this.getCache(state.structure),
+        nowEpochMs: this.deps.clock.nowEpochMs(),
+      }),
+    );
   }
 
   toggle(): void {
+    const state = this.deps.store.getState();
     this.deps.store.setState(
       toggleTimer({
-        state: this.deps.store.getState(),
+        state,
+        cache: this.getCache(state.structure),
         nowEpochMs: this.deps.clock.nowEpochMs(),
       }),
     );
   }
 
   goToNextItem(): void {
+    const state = this.deps.store.getState();
     this.deps.store.setState(
       goToNextItem({
-        state: this.deps.store.getState(),
+        state,
+        cache: this.getCache(state.structure),
         nowEpochMs: this.deps.clock.nowEpochMs(),
       }),
     );
   }
 
   goToPreviousItem(): void {
+    const state = this.deps.store.getState();
     this.deps.store.setState(
       goToPreviousItem({
-        state: this.deps.store.getState(),
+        state,
+        cache: this.getCache(state.structure),
         nowEpochMs: this.deps.clock.nowEpochMs(),
       }),
     );
@@ -531,10 +576,12 @@ export class TimerUsecase {
   }
 
   applyEditedStructure(structure: TimerStructure): void {
+    const nextStructure = assertTimerStructure(cloneTimerStructure(structure));
     this.deps.store.setState(
       applyEditedStructure({
         state: this.deps.store.getState(),
-        structure,
+        cache: this.getCache(nextStructure),
+        structure: nextStructure,
       }),
     );
   }
