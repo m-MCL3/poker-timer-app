@@ -35,6 +35,18 @@ function formatPresetLabel(preset: PresetSummary): string {
   return `${preset.name} (${yyyy}-${mm}-${dd} ${hh}:${mi})`;
 }
 
+function isUndoShortcut(event: KeyboardEvent): boolean {
+  return (event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z";
+}
+
+function isRedoShortcut(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase();
+  return (
+    ((event.ctrlKey || event.metaKey) && event.shiftKey && key === "z") ||
+    ((event.ctrlKey || event.metaKey) && key === "y")
+  );
+}
+
 export default function EditorPage() {
   const navigate = useNavigate();
   const { editorUsecase, presetUsecase, timerUsecase } = useContainer();
@@ -65,13 +77,41 @@ export default function EditorPage() {
     [editorState, editorUsecase],
   );
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isTyping =
+        activeElement instanceof HTMLInputElement ||
+        activeElement instanceof HTMLTextAreaElement ||
+        activeElement instanceof HTMLSelectElement;
+
+      if (!snapshot.isEditable || isTyping) {
+        return;
+      }
+
+      if (isUndoShortcut(event)) {
+        event.preventDefault();
+        setEditorState((prev) => editorUsecase.undo(prev));
+        return;
+      }
+
+      if (isRedoShortcut(event)) {
+        event.preventDefault();
+        setEditorState((prev) => editorUsecase.redo(prev));
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editorUsecase, snapshot.isEditable]);
+
   async function refreshPresets(): Promise<void> {
     setPresets(await presetUsecase.listPresets());
   }
 
   useEffect(() => {
     void refreshPresets();
-  }, []);
+  }, [presetUsecase]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -93,6 +133,14 @@ export default function EditorPage() {
         operation,
       }),
     );
+  }
+
+  function onUndo(): void {
+    setEditorState((prev) => editorUsecase.undo(prev));
+  }
+
+  function onRedo(): void {
+    setEditorState((prev) => editorUsecase.redo(prev));
   }
 
   function backWithGuard(): void {
@@ -273,6 +321,9 @@ export default function EditorPage() {
             各行の「＋L」で下にLevel挿入、「＋B」で下にBreak挿入、
             「－」で行削除。TypeでLevel/Break切替。
           </p>
+          <p className="mt-2 text-xs text-zinc-500">
+            Undo: Ctrl/Cmd + Z, Redo: Ctrl/Cmd + Shift + Z または Ctrl/Cmd + Y
+          </p>
           {!snapshot.isEditable ? (
             <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               running中は参照のみです。
@@ -353,6 +404,30 @@ export default function EditorPage() {
         </section>
 
         <section className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-950/60 shadow-xl">
+          <div className="flex items-center justify-between border-b border-zinc-800 px-5 py-4">
+            <div className="text-sm text-zinc-400">
+              {snapshot.title}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onUndo}
+                disabled={!snapshot.isEditable || !snapshot.canUndo}
+                className="rounded-xl border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Undo
+              </button>
+              <button
+                type="button"
+                onClick={onRedo}
+                disabled={!snapshot.isEditable || !snapshot.canRedo}
+                className="rounded-xl border border-zinc-700 px-4 py-2 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Redo
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="editor-table w-full min-w-[1200px] border-collapse">
               <thead>
@@ -527,6 +602,22 @@ export default function EditorPage() {
           </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-zinc-800 px-5 py-4">
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={!snapshot.isEditable || !snapshot.canUndo}
+              className="rounded-xl border border-zinc-700 px-4 py-2 hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Undo
+            </button>
+            <button
+              type="button"
+              onClick={onRedo}
+              disabled={!snapshot.isEditable || !snapshot.canRedo}
+              className="rounded-xl border border-zinc-700 px-4 py-2 hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Redo
+            </button>
             <button
               type="button"
               onClick={() => setEditorState((prev) => editorUsecase.resetChanges(prev))}

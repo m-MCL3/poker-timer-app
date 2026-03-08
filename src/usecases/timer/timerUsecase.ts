@@ -24,6 +24,8 @@ import type {
 } from "@/usecases/ports/runtimeStore";
 import {
   createBlindGroupSnapshot,
+  formatDurationText,
+  formatNextBreakText,
   type TimerSnapshot,
 } from "@/usecases/timer/timerSnapshot";
 
@@ -408,6 +410,8 @@ function createSnapshot(input: {
 }): TimerSnapshot {
   const synced = syncState(input);
   const item = currentItem(synced);
+  const remainingMs = computeRemainingMs(synced, input.nowEpochMs);
+  const nextBreakRemainingMs = computeNextBreakRemainingMs(synced, input.nowEpochMs);
 
   return {
     title: synced.structure.name,
@@ -420,7 +424,8 @@ function createSnapshot(input: {
       synced.structure,
       synced.runtime.currentIndex,
     ),
-    remainingMs: computeRemainingMs(synced, input.nowEpochMs),
+    remainingMs,
+    remainingText: formatDurationText(remainingMs),
     showBreakBanner: item.kind === "break",
     showCurrentBlinds: item.kind === "level",
     currentBlindGroups:
@@ -428,7 +433,8 @@ function createSnapshot(input: {
         ? createBlindGroupSnapshot(item.blindGroups)
         : createBlindGroupSnapshot(createDefaultBlindGroups()),
     nextItemText: buildNextItemText(synced.structure, synced.runtime.currentIndex),
-    nextBreakRemainingMs: computeNextBreakRemainingMs(synced, input.nowEpochMs),
+    nextBreakRemainingMs,
+    nextBreakText: formatNextBreakText(nextBreakRemainingMs),
   };
 }
 

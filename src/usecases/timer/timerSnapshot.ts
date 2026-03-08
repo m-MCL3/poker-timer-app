@@ -23,12 +23,37 @@ export type TimerSnapshot = {
   currentItemKind: "level" | "break";
   currentItemLabel: string;
   remainingMs: number;
+  remainingText: string;
   showBreakBanner: boolean;
   showCurrentBlinds: boolean;
   currentBlindGroups: SnapshotBlindGroup[];
   nextItemText: string;
   nextBreakRemainingMs: number | null;
+  nextBreakText: string;
 };
+
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+export function formatDurationText(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = totalSec % 60;
+  return `${pad2(minutes)}:${pad2(seconds)}`;
+}
+
+export function formatNextBreakText(nextBreakRemainingMs: number | null): string {
+  if (nextBreakRemainingMs === null) {
+    return "NO BREAK";
+  }
+
+  if (nextBreakRemainingMs === 0) {
+    return "NOW";
+  }
+
+  return formatDurationText(nextBreakRemainingMs);
+}
 
 export function createBlindGroupSnapshot(
   blindGroups: BlindGroup[],

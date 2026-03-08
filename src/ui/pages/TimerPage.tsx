@@ -4,28 +4,6 @@ import BlindsPanel from "@/ui/components/BlindsPanel";
 import MenuButton from "@/ui/components/MenuButton";
 import NextItemPanel from "@/ui/components/NextItemPanel";
 import TimerBoard from "@/ui/components/TimerBoard";
-import type { TimerSnapshot } from "@/usecases/timer/timerSnapshot";
-
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function formatMMSS(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSec / 60);
-  const seconds = totalSec % 60;
-  return `${pad2(minutes)}:${pad2(seconds)}`;
-}
-
-function formatNextBreakText(snapshot: TimerSnapshot): string {
-  if (snapshot.nextBreakRemainingMs === null) {
-    return "NO BREAK";
-  }
-  if (snapshot.nextBreakRemainingMs === 0) {
-    return "NOW";
-  }
-  return formatMMSS(snapshot.nextBreakRemainingMs);
-}
 
 export default function TimerPage() {
   const { timerUsecase } = useContainer();
@@ -81,13 +59,13 @@ export default function TimerPage() {
             currentItemNumber={snapshot.currentItemNumber}
             totalItemCount={snapshot.totalItemCount}
             currentItemLabel={snapshot.currentItemLabel}
-            remainingText={formatMMSS(snapshot.remainingMs)}
+            remainingText={snapshot.remainingText}
             onToggleRequested={() => timerUsecase.toggle()}
           />
 
           <NextItemPanel
             nextItemText={snapshot.nextItemText}
-            nextBreakText={formatNextBreakText(snapshot)}
+            nextBreakText={snapshot.nextBreakText}
           />
 
           {snapshot.showCurrentBlinds ? (

@@ -112,7 +112,10 @@ function applyOperation(
         id: item.id,
         name: item.name,
         durationSec: item.durationSec,
-        blindGroups: findNearestLevelBlindGroups(next.items, operation.itemIndex - 1),
+        blindGroups: findNearestLevelBlindGroups(
+          next.items,
+          operation.itemIndex - 1,
+        ),
       });
       return next;
     }
@@ -148,7 +151,9 @@ function toRowSnapshot(
   item: TimerItem,
   itemIndex: number,
 ): EditorRowSnapshot {
-  const blindGroups = item.kind === "level" ? normalizeBlindGroups(item.blindGroups) : [];
+  const blindGroups =
+    item.kind === "level" ? normalizeBlindGroups(item.blindGroups) : [];
+
   return {
     itemId: item.id,
     itemIndex,
@@ -157,12 +162,24 @@ function toRowSnapshot(
     itemLabel: buildDerivedItemName(structure, itemIndex),
     durationMinutesText: String(Math.floor(item.durationSec / 60)),
     blindCells: GAME_KIND_ORDER.map((gameKind) => {
-      const group = blindGroups.find((blindGroup) => blindGroup.gameKind === gameKind);
+      const group = blindGroups.find(
+        (blindGroup) => blindGroup.gameKind === gameKind,
+      );
+
       return {
         gameKind,
-        sb: group?.values.sb === null || group?.values.sb === undefined ? "" : String(group.values.sb),
-        bb: group?.values.bb === null || group?.values.bb === undefined ? "" : String(group.values.bb),
-        ante: group?.values.ante === null || group?.values.ante === undefined ? "" : String(group.values.ante),
+        sb:
+          group?.values.sb === null || group?.values.sb === undefined
+            ? ""
+            : String(group.values.sb),
+        bb:
+          group?.values.bb === null || group?.values.bb === undefined
+            ? ""
+            : String(group.values.bb),
+        ante:
+          group?.values.ante === null || group?.values.ante === undefined
+            ? ""
+            : String(group.values.ante),
       };
     }),
     canRemove: structure.items.length > 1,
@@ -178,6 +195,7 @@ export class EditorUsecase {
     return {
       baseStructure: cloneTimerStructure(input.structure),
       operations: [],
+      undoneOperations: [],
       isEditable: input.isEditable,
     };
   }
@@ -194,6 +212,14 @@ export class EditorUsecase {
     return state.operations.length > 0;
   }
 
+  canUndo(state: EditorState): boolean {
+    return state.operations.length > 0;
+  }
+
+  canRedo(state: EditorState): boolean {
+    return state.undoneOperations.length > 0;
+  }
+
   appendOperation(input: {
     state: EditorState;
     operation: EditOperation;
@@ -201,6 +227,36 @@ export class EditorUsecase {
     return {
       ...input.state,
       operations: [...input.state.operations, input.operation],
+      undoneOperations: [],
+    };
+  }
+
+  undo(state: EditorState): EditorState {
+    if (!state.operations.length) {
+      return state;
+    }
+
+    const nextOperations = state.operations.slice(0, -1);
+    const lastOperation = state.operations[state.operations.length - 1];
+
+    return {
+      ...state,
+      operations: nextOperations,
+      undoneOperations: [lastOperation, ...state.undoneOperations],
+    };
+  }
+
+  redo(state: EditorState): EditorState {
+    if (!state.undoneOperations.length) {
+      return state;
+    }
+
+    const [nextOperation, ...remainingUndone] = state.undoneOperations;
+
+    return {
+      ...state,
+      operations: [...state.operations, nextOperation],
+      undoneOperations: remainingUndone,
     };
   }
 
@@ -212,6 +268,7 @@ export class EditorUsecase {
       ...input.state,
       baseStructure: cloneTimerStructure(input.structure),
       operations: [],
+      undoneOperations: [],
     };
   }
 
@@ -219,6 +276,7 @@ export class EditorUsecase {
     return {
       ...state,
       operations: [],
+      undoneOperations: [],
     };
   }
 
@@ -234,10 +292,13 @@ export class EditorUsecase {
 
   createSnapshot(state: EditorState): EditorSnapshot {
     const structure = this.materializeStructure(state);
+
     return {
       title: structure.name,
       isDirty: this.isDirty(state),
       isEditable: state.isEditable,
+      canUndo: this.canUndo(state),
+      canRedo: this.canRedo(state),
       rows: structure.items.map((item, itemIndex) =>
         toRowSnapshot(structure, item, itemIndex),
       ),

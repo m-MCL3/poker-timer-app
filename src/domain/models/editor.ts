@@ -18,5 +18,6 @@ export type EditOperation =
 export type EditorState = {
   baseStructure: TimerStructure;
   operations: EditOperation[];
+  undoneOperations: EditOperation[];
   isEditable: boolean;
 };

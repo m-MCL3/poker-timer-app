@@ -23,5 +23,7 @@ export type EditorSnapshot = {
   title: string;
   isDirty: boolean;
   isEditable: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   rows: EditorRowSnapshot[];
 };
