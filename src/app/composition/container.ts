@@ -1,60 +1,42 @@
-import { SystemClock } from "@/adapters/clock/systemClock";
-import { defaultTimerStructure } from "@/adapters/mock/defaultTimerStructure";
-import { LocalStorageStorage } from "@/adapters/storage/localStorageStorage";
-import { createInitialTimerState } from "@/domain/entities/timerState";
-import { LocalStructurePresetRepository } from "@/infrastructure/persistence/structurePresetRepository";
-import { EditorUsecase } from "@/usecases/editor/editorUsecase";
-import { PresetUsecase } from "@/usecases/preset/presetUsecase";
-import type {
-  RuntimeStore,
-  RuntimeStoreListener,
-} from "@/usecases/ports/runtimeStore";
-import { TimerController } from "@/usecases/timer/timerController";
-import { TimerUsecase } from "@/usecases/timer/timerUsecase";
-
-function createRuntimeStore(initialState = createInitialTimerState(defaultTimerStructure)): RuntimeStore {
-  let state = initialState;
-  const listeners = new Set<RuntimeStoreListener>();
-
-  return {
-    getState: () => state,
-    setState: (nextState) => {
-      state = nextState;
-      listeners.forEach((listener) => listener());
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
-}
+import { EditorService } from "@/application/editor/editorService";
+import { PresetService } from "@/application/presets/presetService";
+import { TimerController } from "@/application/timer/timerController";
+import { TimerSessionService } from "@/application/timer/timerSessionService";
+import { createInitialRuntime } from "@/domain/entities/timerRuntime";
+import { defaultTimerStructure } from "@/infrastructure/mock/defaultTimerStructure";
+import { LocalTimerPresetRepository } from "@/infrastructure/persistence/localTimerPresetRepository";
+import { InMemoryRuntimeStore } from "@/infrastructure/runtime/inMemoryRuntimeStore";
+import { BrowserIntervalScheduler } from "@/infrastructure/scheduler/browserIntervalScheduler";
+import { BrowserKeyValueStore } from "@/infrastructure/storage/browserKeyValueStore";
+import { SystemClock } from "@/infrastructure/clock/systemClock";
 
 export type AppContainer = {
-  timerUsecase: TimerUsecase;
+  timerSessionService: TimerSessionService;
   timerController: TimerController;
-  editorUsecase: EditorUsecase;
-  presetUsecase: PresetUsecase;
+  editorService: EditorService;
+  presetService: PresetService;
 };
 
 export function createContainer(): AppContainer {
   const clock = new SystemClock();
-  const runtimeStore = createRuntimeStore();
-  const timerUsecase = new TimerUsecase({
+  const scheduler = new BrowserIntervalScheduler();
+  const runtimeStore = new InMemoryRuntimeStore(
+    createInitialRuntime(defaultTimerStructure),
+  );
+  const timerSessionService = new TimerSessionService({
     clock,
     store: runtimeStore,
   });
-  const timerController = new TimerController(timerUsecase);
-  const editorUsecase = new EditorUsecase();
-  const presetUsecase = new PresetUsecase(
-    new LocalStructurePresetRepository(new LocalStorageStorage()),
+  const timerController = new TimerController(timerSessionService, scheduler);
+  const editorService = new EditorService();
+  const presetService = new PresetService(
+    new LocalTimerPresetRepository(new BrowserKeyValueStore()),
   );
 
   return {
-    timerUsecase,
+    timerSessionService,
     timerController,
-    editorUsecase,
-    presetUsecase,
+    editorService,
+    presetService,
   };
 }

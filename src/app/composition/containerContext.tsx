@@ -24,10 +24,10 @@ export function ContainerProvider(props: PropsWithChildren) {
 }
 
 export function useContainer(): AppContainer {
-  const value = useContext(ContainerContext);
-  if (!value) {
+  const container = useContext(ContainerContext);
+  if (!container) {
     throw new Error("ContainerProvider is missing.");
   }
 
-  return value;
+  return container;
 }

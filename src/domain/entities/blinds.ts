@@ -1,21 +1,23 @@
-export type GameKindId = "fl" | "stud" | "nlpl";
-export type BlindSlotId = "sb" | "bb" | "ante";
+export type GameKind = "fl" | "stud" | "nlpl";
+export type BlindSlot = "sb" | "bb" | "ante";
 
-export type BlindTriple = {
+export type BlindValues = {
   sb: number | null;
   bb: number | null;
   ante: number | null;
 };
 
-export type BlindsByGame = Record<GameKindId, BlindTriple>;
+export type BlindsByGame = Record<GameKind, BlindValues>;
 
-export const GAME_KIND_ORDER: GameKindId[] = ["fl", "stud", "nlpl"];
+export const GAME_KIND_ORDER: readonly GameKind[] = ["fl", "stud", "nlpl"];
 
-export const EMPTY_BLINDS: BlindsByGame = {
-  fl: { sb: null, bb: null, ante: null },
-  stud: { sb: null, bb: null, ante: null },
-  nlpl: { sb: null, bb: null, ante: null },
-};
+export function createEmptyBlinds(): BlindsByGame {
+  return {
+    fl: { sb: null, bb: null, ante: null },
+    stud: { sb: null, bb: null, ante: null },
+    nlpl: { sb: null, bb: null, ante: null },
+  };
+}
 
 export function cloneBlinds(blinds: BlindsByGame): BlindsByGame {
   return {
@@ -25,22 +27,34 @@ export function cloneBlinds(blinds: BlindsByGame): BlindsByGame {
   };
 }
 
-export function gameKindLabel(gameKind: GameKindId): string {
+export function normalizeBlindValue(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(value));
+}
+
+export function formatBlindValue(value: number | null): string {
+  if (value === null || value === 0) {
+    return "-";
+  }
+
+  return String(value);
+}
+
+export function gameKindLabel(gameKind: GameKind): string {
   switch (gameKind) {
     case "fl":
       return "FL";
     case "stud":
       return "STUD";
-    default:
+    case "nlpl":
       return "NL / PL";
   }
 }
 
-export function blindSlotLabels(gameKind: GameKindId): {
-  sb: string;
-  bb: string;
-  ante: string;
-} {
+export function blindSlotLabels(gameKind: GameKind): Record<BlindSlot, string> {
   if (gameKind === "stud") {
     return {
       sb: "Bring-in",
@@ -54,12 +68,4 @@ export function blindSlotLabels(gameKind: GameKindId): {
     bb: "BB",
     ante: "Ante",
   };
-}
-
-export function formatBlindValue(value: number | null): string {
-  if (value === null || value === 0) {
-    return "-";
-  }
-
-  return String(value);
 }

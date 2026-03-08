@@ -7,10 +7,10 @@ import { ContainerProvider } from "@/app/composition/containerContext";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <ContainerProvider>
+    <ContainerProvider>
+      <BrowserRouter>
         <App />
-      </ContainerProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ContainerProvider>
   </React.StrictMode>,
 );
