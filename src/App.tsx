@@ -1,15 +1,15 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import EditorPage from "@/ui/pages/EditorPage";
-import SettingsPage from "@/ui/pages/SettingsPage";
-import TimerPage from "@/ui/pages/TimerPage";
+import TimerPage from "@/presentation/pages/TimerPage";
+import EditorPage from "@/presentation/pages/EditorPage";
+import SettingsPage from "@/presentation/pages/SettingsPage";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<TimerPage />} />
+      <Route path="/" element={<Navigate to="/timer" replace />} />
+      <Route path="/timer" element={<TimerPage />} />
       <Route path="/editor" element={<EditorPage />} />
       <Route path="/settings" element={<SettingsPage />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

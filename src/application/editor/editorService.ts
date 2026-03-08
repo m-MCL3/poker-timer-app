@@ -1,330 +1,145 @@
-import { GAME_KIND_ORDER, createEmptyBlinds, type BlindSlot, type GameKind } from "@/domain/entities/blinds";
-import {
-  assertStructure,
-  buildItemLabel,
-  cloneStructure,
-  createBreakItem,
-  createLevelItem,
-  normalizeDurationMinutes,
-  type TimerStructure,
-  type TimerStructureItem,
-} from "@/domain/entities/timerStructure";
-import type { EditorDraft, EditorRowSnapshot, EditorSnapshot } from "@/application/editor/editorModels";
+import { applyEditorOperations, type EditorOperation } from "@/domain/editorOperation";
+import { buildItemLabel, cloneStructure, type TournamentStructure } from "@/domain/tournamentStructure";
+import { GAME_KIND_ORDER, type GameKindId } from "@/domain/blinds";
 
-function randomId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
-}
+export type EditorState = {
+  baseStructure: TournamentStructure;
+  operations: EditorOperation[];
+  undoneOperations: EditorOperation[];
+  isEditable: boolean;
+};
 
-function parseOptionalInteger(text: string): number | null {
-  const trimmed = text.trim();
-  if (!trimmed) {
-    return null;
-  }
+export type EditorBlindCellView = {
+  gameKind: GameKindId;
+  sb: string;
+  bb: string;
+  ante: string;
+};
 
-  const value = Number(trimmed);
-  if (!Number.isFinite(value)) {
-    return null;
-  }
+export type EditorRowView = {
+  itemId: string;
+  itemIndex: number;
+  itemNumber: number;
+  itemKind: "level" | "break";
+  itemLabel: string;
+  durationMinutesText: string;
+  blindCells: EditorBlindCellView[];
+  canRemove: boolean;
+  canEditBlinds: boolean;
+};
 
-  return Math.max(0, Math.floor(value));
-}
+export type EditorView = {
+  title: string;
+  defaultLevelDurationMinutesText: string;
+  defaultBreakDurationMinutesText: string;
+  isDirty: boolean;
+  isEditable: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  rows: EditorRowView[];
+};
 
-function pushHistory(draft: EditorDraft, nextWorkingStructure: TimerStructure): EditorDraft {
-  return {
-    ...draft,
-    workingStructure: nextWorkingStructure,
-    past: [...draft.past, cloneStructure(draft.workingStructure)],
-    future: [],
-  };
-}
-
-function replaceStructureItem(
-  structure: TimerStructure,
-  itemIndex: number,
-  item: TimerStructureItem,
-): TimerStructure {
-  return {
-    ...cloneStructure(structure),
-    items: structure.items.map((currentItem, currentIndex) =>
-      currentIndex === itemIndex ? item : currentItem,
-    ),
-  };
-}
-
-function createDefaultLevel(structure: TimerStructure): TimerStructureItem {
-  return createLevelItem({
-    id: randomId("lv"),
-    durationMinutes: structure.defaultLevelDurationMinutes,
-    blinds: createEmptyBlinds(),
-  });
-}
-
-function createDefaultBreak(structure: TimerStructure): TimerStructureItem {
-  return createBreakItem({
-    id: randomId("br"),
-    durationMinutes: structure.defaultBreakDurationMinutes,
-  });
-}
-
-function toText(value: number | null): string {
+function toCellText(value: number | null): string {
   return value === null ? "" : String(value);
 }
 
-function createRowSnapshot(
-  structure: TimerStructure,
-  itemIndex: number,
-): EditorRowSnapshot {
+function createRowView(structure: TournamentStructure, itemIndex: number): EditorRowView {
   const item = structure.items[itemIndex]!;
-
   return {
     itemId: item.id,
     itemIndex,
     itemNumber: itemIndex + 1,
-    itemLabel: buildItemLabel(structure, itemIndex),
     itemKind: item.kind,
+    itemLabel: buildItemLabel(structure, itemIndex),
     durationMinutesText: String(item.durationMinutes),
-    blindValues: {
-      fl: {
-        sb: item.kind === "level" ? toText(item.blinds.fl.sb) : "",
-        bb: item.kind === "level" ? toText(item.blinds.fl.bb) : "",
-        ante: item.kind === "level" ? toText(item.blinds.fl.ante) : "",
-      },
-      stud: {
-        sb: item.kind === "level" ? toText(item.blinds.stud.sb) : "",
-        bb: item.kind === "level" ? toText(item.blinds.stud.bb) : "",
-        ante: item.kind === "level" ? toText(item.blinds.stud.ante) : "",
-      },
-      nlpl: {
-        sb: item.kind === "level" ? toText(item.blinds.nlpl.sb) : "",
-        bb: item.kind === "level" ? toText(item.blinds.nlpl.bb) : "",
-        ante: item.kind === "level" ? toText(item.blinds.nlpl.ante) : "",
-      },
-    },
-    canEditBlinds: item.kind === "level",
+    blindCells: GAME_KIND_ORDER.map((gameKind) => {
+      const triple = item.kind === "level" ? item.blinds[gameKind] : null;
+      return {
+        gameKind,
+        sb: toCellText(triple?.sb ?? null),
+        bb: toCellText(triple?.bb ?? null),
+        ante: toCellText(triple?.ante ?? null),
+      };
+    }),
     canRemove: structure.items.length > 1,
+    canEditBlinds: item.kind === "level",
   };
 }
 
 export class EditorService {
-  createDraft(input: {
-    structure: TimerStructure;
-    isEditable: boolean;
-  }): EditorDraft {
-    const cloned = cloneStructure(input.structure);
-
+  createState(input: { structure: TournamentStructure; isEditable: boolean }): EditorState {
     return {
-      baseStructure: cloned,
-      workingStructure: cloneStructure(cloned),
-      past: [],
-      future: [],
+      baseStructure: cloneStructure(input.structure),
+      operations: [],
+      undoneOperations: [],
       isEditable: input.isEditable,
     };
   }
 
-  setEditable(draft: EditorDraft, isEditable: boolean): EditorDraft {
+  materializeStructure(state: EditorState): TournamentStructure {
+    return applyEditorOperations(state.baseStructure, state.operations);
+  }
+
+  appendOperation(input: { state: EditorState; operation: EditorOperation }): EditorState {
     return {
-      ...draft,
-      isEditable,
+      ...input.state,
+      operations: [...input.state.operations, input.operation],
+      undoneOperations: [],
     };
   }
 
-  renameStructure(draft: EditorDraft, name: string): EditorDraft {
-    return pushHistory(draft, {
-      ...cloneStructure(draft.workingStructure),
-      name,
-    });
-  }
-
-  setDefaultLevelDuration(draft: EditorDraft, text: string): EditorDraft {
-    return pushHistory(draft, {
-      ...cloneStructure(draft.workingStructure),
-      defaultLevelDurationMinutes: normalizeDurationMinutes(Number(text)),
-    });
-  }
-
-  setDefaultBreakDuration(draft: EditorDraft, text: string): EditorDraft {
-    return pushHistory(draft, {
-      ...cloneStructure(draft.workingStructure),
-      defaultBreakDurationMinutes: normalizeDurationMinutes(Number(text)),
-    });
-  }
-
-  insertLevelAfter(draft: EditorDraft, itemIndex: number): EditorDraft {
-    const structure = cloneStructure(draft.workingStructure);
-    structure.items.splice(itemIndex + 1, 0, createDefaultLevel(structure));
-    return pushHistory(draft, structure);
-  }
-
-  insertBreakAfter(draft: EditorDraft, itemIndex: number): EditorDraft {
-    const structure = cloneStructure(draft.workingStructure);
-    structure.items.splice(itemIndex + 1, 0, createDefaultBreak(structure));
-    return pushHistory(draft, structure);
-  }
-
-  removeItem(draft: EditorDraft, itemIndex: number): EditorDraft {
-    if (draft.workingStructure.items.length <= 1) {
-      return draft;
+  undo(state: EditorState): EditorState {
+    if (state.operations.length === 0) {
+      return state;
     }
-
-    const structure = cloneStructure(draft.workingStructure);
-    structure.items.splice(itemIndex, 1);
-    return pushHistory(draft, structure);
-  }
-
-  setItemKind(
-    draft: EditorDraft,
-    itemIndex: number,
-    nextKind: "level" | "break",
-  ): EditorDraft {
-    const structure = cloneStructure(draft.workingStructure);
-    const currentItem = structure.items[itemIndex];
-    if (!currentItem) {
-      return draft;
-    }
-
-    const nextItem =
-      nextKind === "level"
-        ? createLevelItem({
-            id: currentItem.id,
-            durationMinutes:
-              currentItem.kind === "level"
-                ? currentItem.durationMinutes
-                : structure.defaultLevelDurationMinutes,
-            blinds:
-              currentItem.kind === "level"
-                ? currentItem.blinds
-                : createEmptyBlinds(),
-          })
-        : createBreakItem({
-            id: currentItem.id,
-            durationMinutes:
-              currentItem.kind === "break"
-                ? currentItem.durationMinutes
-                : structure.defaultBreakDurationMinutes,
-          });
-
-    return pushHistory(draft, replaceStructureItem(structure, itemIndex, nextItem));
-  }
-
-  setItemDuration(draft: EditorDraft, itemIndex: number, text: string): EditorDraft {
-    const structure = cloneStructure(draft.workingStructure);
-    const currentItem = structure.items[itemIndex];
-    if (!currentItem) {
-      return draft;
-    }
-
-    const nextDurationMinutes = normalizeDurationMinutes(Number(text));
-    const nextItem =
-      currentItem.kind === "break"
-        ? createBreakItem({
-            id: currentItem.id,
-            durationMinutes: nextDurationMinutes,
-          })
-        : createLevelItem({
-            id: currentItem.id,
-            durationMinutes: nextDurationMinutes,
-            blinds: currentItem.blinds,
-          });
-
-    return pushHistory(draft, replaceStructureItem(structure, itemIndex, nextItem));
-  }
-
-  setBlind(
-    draft: EditorDraft,
-    itemIndex: number,
-    gameKind: GameKind,
-    slot: BlindSlot,
-    text: string,
-  ): EditorDraft {
-    const structure = cloneStructure(draft.workingStructure);
-    const currentItem = structure.items[itemIndex];
-    if (!currentItem || currentItem.kind != "level") {
-      return draft;
-    }
-
-    const nextBlindValue = parseOptionalInteger(text);
-    const nextItem = createLevelItem({
-      id: currentItem.id,
-      durationMinutes: currentItem.durationMinutes,
-      blinds: {
-        ...currentItem.blinds,
-        [gameKind]: {
-          ...currentItem.blinds[gameKind],
-          [slot]: nextBlindValue,
-        },
-      },
-    });
-
-    return pushHistory(draft, replaceStructureItem(structure, itemIndex, nextItem));
-  }
-
-  undo(draft: EditorDraft): EditorDraft {
-    const previous = draft.past[draft.past.length - 1];
-    if (!previous) {
-      return draft;
-    }
-
+    const nextOperations = state.operations.slice(0, -1);
+    const undone = state.operations[state.operations.length - 1]!;
     return {
-      ...draft,
-      workingStructure: cloneStructure(previous),
-      past: draft.past.slice(0, -1),
-      future: [cloneStructure(draft.workingStructure), ...draft.future],
+      ...state,
+      operations: nextOperations,
+      undoneOperations: [undone, ...state.undoneOperations],
     };
   }
 
-  redo(draft: EditorDraft): EditorDraft {
-    const [next, ...remaining] = draft.future;
-    if (!next) {
-      return draft;
+  redo(state: EditorState): EditorState {
+    if (state.undoneOperations.length === 0) {
+      return state;
     }
-
+    const [nextOperation, ...remaining] = state.undoneOperations;
     return {
-      ...draft,
-      workingStructure: cloneStructure(next),
-      past: [...draft.past, cloneStructure(draft.workingStructure)],
-      future: remaining,
+      ...state,
+      operations: [...state.operations, nextOperation],
+      undoneOperations: remaining,
     };
   }
 
-  replaceBaseStructure(draft: EditorDraft, structure: TimerStructure): EditorDraft {
-    const normalized = assertStructure(structure);
-
+  replaceBaseStructure(input: { state: EditorState; structure: TournamentStructure }): EditorState {
     return {
-      ...draft,
-      baseStructure: cloneStructure(normalized),
-      workingStructure: cloneStructure(normalized),
-      past: [],
-      future: [],
+      ...input.state,
+      baseStructure: cloneStructure(input.structure),
+      operations: [],
+      undoneOperations: [],
     };
   }
 
-  resetChanges(draft: EditorDraft): EditorDraft {
+  setEditable(input: { state: EditorState; isEditable: boolean }): EditorState {
     return {
-      ...draft,
-      workingStructure: cloneStructure(draft.baseStructure),
-      past: [],
-      future: [],
+      ...input.state,
+      isEditable: input.isEditable,
     };
   }
 
-  materializeStructure(draft: EditorDraft): TimerStructure {
-    return assertStructure(draft.workingStructure);
-  }
-
-  createSnapshot(draft: EditorDraft): EditorSnapshot {
-    const working = this.materializeStructure(draft);
-
+  createView(state: EditorState): EditorView {
+    const structure = this.materializeStructure(state);
     return {
-      title: working.name,
-      isEditable: draft.isEditable,
-      isDirty: JSON.stringify(working) != JSON.stringify(draft.baseStructure),
-      canUndo: draft.past.length > 0,
-      canRedo: draft.future.length > 0,
-      defaultLevelDurationText: String(working.defaultLevelDurationMinutes),
-      defaultBreakDurationText: String(working.defaultBreakDurationMinutes),
-      rows: working.items.map((_, itemIndex) => createRowSnapshot(working, itemIndex)),
+      title: structure.name,
+      defaultLevelDurationMinutesText: String(structure.defaultLevelDurationMinutes),
+      defaultBreakDurationMinutesText: String(structure.defaultBreakDurationMinutes),
+      isDirty: state.operations.length > 0,
+      isEditable: state.isEditable,
+      canUndo: state.operations.length > 0,
+      canRedo: state.undoneOperations.length > 0,
+      rows: structure.items.map((_, itemIndex) => createRowView(structure, itemIndex)),
     };
   }
 }
-
-export const editorGameKinds = [...GAME_KIND_ORDER];

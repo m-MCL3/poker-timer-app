@@ -1,11 +1,8 @@
-import type { Scheduler } from "@/application/ports/scheduler";
+import type { IntervalScheduler } from "@/application/shared/ports/IntervalScheduler";
 
-export class BrowserIntervalScheduler implements Scheduler {
-  setInterval(callback: () => void, intervalMs: number): number {
-    return window.setInterval(callback, intervalMs);
-  }
-
-  clearInterval(handleId: number): void {
-    window.clearInterval(handleId);
+export class BrowserIntervalScheduler implements IntervalScheduler {
+  start(callback: () => void, intervalMs: number): () => void {
+    const timerId = window.setInterval(callback, intervalMs);
+    return () => window.clearInterval(timerId);
   }
 }

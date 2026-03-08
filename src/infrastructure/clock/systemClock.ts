@@ -1,4 +1,4 @@
-import type { Clock } from "@/application/ports/clock";
+import type { Clock } from "@/application/shared/ports/Clock";
 
 export class SystemClock implements Clock {
   nowEpochMs(): number {
