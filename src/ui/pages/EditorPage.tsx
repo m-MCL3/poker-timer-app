@@ -15,6 +15,7 @@ function parseBlindValue(value: string): number | null {
   if (trimmed === "") {
     return null;
   }
+
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -225,9 +226,11 @@ export default function EditorPage() {
       alert(validationError);
       return;
     }
+
     if (nextName === currentName) {
       return;
     }
+
     if (presetUsecase.hasPreset(presets, nextName)) {
       alert(`プリセット「${nextName}」は既に存在します。`);
       return;

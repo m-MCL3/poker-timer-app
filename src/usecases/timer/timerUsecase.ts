@@ -1,5 +1,9 @@
 import { createDefaultBlindGroups } from "@/domain/models/blinds";
-import { createInitialTimerRuntime, type TimerRuntime, type TimerStatus } from "@/domain/models/timerRuntime";
+import {
+  createInitialTimerRuntime,
+  type TimerRuntime,
+  type TimerStatus,
+} from "@/domain/models/timerRuntime";
 import {
   assertTimerStructure,
   buildDerivedItemName,
@@ -10,9 +14,18 @@ import {
   type TimerStructure,
 } from "@/domain/models/timerStructure";
 import type { Clock } from "@/usecases/ports/clock";
-import type { CancelableTask, IntervalScheduler } from "@/usecases/ports/intervalScheduler";
-import type { TimerRuntimeStore, TimerSessionState } from "@/usecases/ports/runtimeStore";
-import { createBlindGroupSnapshot, type TimerSnapshot } from "@/usecases/timer/timerSnapshot";
+import type {
+  CancelableTask,
+  IntervalScheduler,
+} from "@/usecases/ports/intervalScheduler";
+import type {
+  TimerRuntimeStore,
+  TimerSessionState,
+} from "@/usecases/ports/runtimeStore";
+import {
+  createBlindGroupSnapshot,
+  type TimerSnapshot,
+} from "@/usecases/timer/timerSnapshot";
 
 function clampNonNegative(value: number): number {
   return value < 0 ? 0 : value;
@@ -47,8 +60,14 @@ function computeRemainingMs(state: TimerSessionState, nowEpochMs: number): numbe
 function buildBlindText(item: LevelItem): string {
   return item.blindGroups
     .map((group) => {
-      const sb = group.values.sb === null || group.values.sb === 0 ? "-" : String(group.values.sb);
-      const bb = group.values.bb === null || group.values.bb === 0 ? "-" : String(group.values.bb);
+      const sb =
+        group.values.sb === null || group.values.sb === 0
+          ? "-"
+          : String(group.values.sb);
+      const bb =
+        group.values.bb === null || group.values.bb === 0
+          ? "-"
+          : String(group.values.bb);
       const ante =
         group.values.ante === null || group.values.ante === 0
           ? "-"
@@ -84,6 +103,7 @@ function computeNextBreakRemainingMs(
   }
 
   let totalMs = computeRemainingMs(state, nowEpochMs);
+
   for (
     let index = state.runtime.currentIndex + 1;
     index < state.structure.items.length;
@@ -156,6 +176,7 @@ function advanceRunningTimer(input: {
   }
 
   let nextState = input.state;
+
   while (nextState.runtime.status === "running") {
     const remainingMs = computeRemainingMs(nextState, input.nowEpochMs);
     if (remainingMs > 0) {
@@ -200,6 +221,7 @@ function startTimer(input: {
   nowEpochMs: number;
 }): TimerSessionState {
   const synced = syncState(input);
+
   return withRuntime(synced, {
     status: "running",
     currentIndex: synced.runtime.currentIndex,
@@ -288,9 +310,11 @@ function goToNextItem(input: {
 }): TimerSessionState {
   const synced = syncState(input);
   const nextIndex = synced.runtime.currentIndex + 1;
+
   if (nextIndex >= synced.structure.items.length) {
     return synced;
   }
+
   return moveToItem({
     state: synced,
     itemIndex: nextIndex,
@@ -304,9 +328,11 @@ function goToPreviousItem(input: {
 }): TimerSessionState {
   const synced = syncState(input);
   const previousIndex = synced.runtime.currentIndex - 1;
+
   if (previousIndex < 0) {
     return synced;
   }
+
   return moveToItem({
     state: synced,
     itemIndex: previousIndex,
@@ -458,6 +484,7 @@ export class TimerUsecase {
     if (!this.tickerTask) {
       return;
     }
+
     this.tickerTask.cancel();
     this.tickerTask = null;
   }
