@@ -1,9 +1,8 @@
 import {
   formatBlindValue,
-  type BlindGroup,
   type GameKindId,
-} from "@/domain/models/blinds";
-import type { TimerStatus } from "@/domain/models/timerRuntime";
+} from "@/domain/entities/blinds";
+import type { TimerStatus } from "@/domain/entities/timerState";
 
 export type SnapshotBlindGroup = {
   gameKind: GameKindId;
@@ -49,22 +48,25 @@ export function formatNextBreakText(nextBreakRemainingMs: number | null): string
     return "NO BREAK";
   }
 
-  if (nextBreakRemainingMs === 0) {
+  if (nextBreakRemainingMs <= 0) {
     return "NOW";
   }
 
   return formatDurationText(nextBreakRemainingMs);
 }
 
-export function createBlindGroupSnapshot(
-  blindGroups: BlindGroup[],
-): SnapshotBlindGroup[] {
-  return blindGroups.map((group) => ({
+export function createBlindGroupSnapshot(input: {
+  gameKind: GameKindId;
+  sb: number | null;
+  bb: number | null;
+  ante: number | null;
+}[]): SnapshotBlindGroup[] {
+  return input.map((group) => ({
     gameKind: group.gameKind,
     blinds: {
-      sb: formatBlindValue(group.values.sb),
-      bb: formatBlindValue(group.values.bb),
-      ante: formatBlindValue(group.values.ante),
+      sb: formatBlindValue(group.sb),
+      bb: formatBlindValue(group.bb),
+      ante: formatBlindValue(group.ante),
     },
   }));
 }

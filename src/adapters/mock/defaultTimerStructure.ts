@@ -1,41 +1,45 @@
-import { createBreakItem, createLevelItem, type TimerStructure } from "@/domain/models/timerStructure";
+import {
+  createBreakItem,
+  createLevelItem,
+  type TournamentStructure,
+} from "@/domain/entities/tournamentStructure";
 
-export const defaultTimerStructure: TimerStructure = {
-  id: "sample",
+export const defaultTimerStructure: TournamentStructure = {
+  id: "default-structure",
   name: "Poker Timer (Mock)",
+  defaultLevelDurationMinutes: 20,
+  defaultBreakDurationMinutes: 10,
   items: [
     createLevelItem({
       id: "lv-1",
-      durationSec: 20,
-      blindGroups: [
-        { gameKind: "fl", values: { sb: 100, bb: 200, ante: 0 } },
-        { gameKind: "stud", values: { sb: 50, bb: 200, ante: 25 } },
-        { gameKind: "nlpl", values: { sb: 100, bb: 200, ante: 0 } },
-      ],
+      durationMinutes: 20,
+      blinds: {
+        fl: { sb: 100, bb: 200, ante: 0 },
+        stud: { sb: 50, bb: 200, ante: 25 },
+        nlpl: { sb: 100, bb: 200, ante: 0 },
+      },
     }),
     createLevelItem({
       id: "lv-2",
-      durationSec: 20,
-      blindGroups: [
-        { gameKind: "fl", values: { sb: 200, bb: 400, ante: 0 } },
-        { gameKind: "stud", values: { sb: 100, bb: 400, ante: 50 } },
-        { gameKind: "nlpl", values: { sb: 200, bb: 400, ante: 0 } },
-      ],
+      durationMinutes: 20,
+      blinds: {
+        fl: { sb: 200, bb: 400, ante: 0 },
+        stud: { sb: 100, bb: 400, ante: 50 },
+        nlpl: { sb: 200, bb: 400, ante: 0 },
+      },
     }),
     createBreakItem({
       id: "br-1",
-      durationSec: 10,
+      durationMinutes: 10,
     }),
     createLevelItem({
       id: "lv-3",
-      durationSec: 20,
-      blindGroups: [
-        { gameKind: "fl", values: { sb: 400, bb: 800, ante: 50 } },
-        { gameKind: "stud", values: { sb: 200, bb: 800, ante: 100 } },
-        { gameKind: "nlpl", values: { sb: 400, bb: 800, ante: 50 } },
-      ],
+      durationMinutes: 20,
+      blinds: {
+        fl: { sb: 400, bb: 800, ante: 50 },
+        stud: { sb: 200, bb: 800, ante: 100 },
+        nlpl: { sb: 400, bb: 800, ante: 50 },
+      },
     }),
   ],
-  defaultLevelDurationSec: 20 * 60,
-  defaultBreakDurationSec: 10 * 60,
 };

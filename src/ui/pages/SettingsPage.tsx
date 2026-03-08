@@ -4,38 +4,37 @@ export default function SettingsPage() {
   const navigate = useNavigate();
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#1f2937_0%,#09090b_55%,#000000_100%)] px-4 py-6 text-white sm:px-6">
+    <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-4xl">
-        <header className="mb-6">
-          <h1 className="text-3xl font-bold">Settings</h1>
-        </header>
-
         <button
           type="button"
-          className="mb-6 rounded-xl border border-zinc-700 px-4 py-2 hover:bg-zinc-900/60"
           onClick={() => navigate(-1)}
+          className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-2 text-sm text-zinc-200 transition hover:bg-zinc-900"
         >
           ← Back
         </button>
 
-        <section className="rounded-[2rem] border border-zinc-800 bg-zinc-950/60 p-6 shadow-xl">
-          <p className="text-zinc-300">ここに設定UI（モック）。</p>
+        <section className="mt-6 rounded-[2rem] border border-zinc-800 bg-zinc-950/60 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+          <div className="text-xs tracking-[0.35em] text-cyan-200/70">SETTINGS</div>
+          <h1 className="mt-2 text-3xl font-semibold text-white">Settings</h1>
+          <p className="mt-3 text-sm leading-7 text-zinc-400">
+            ここに設定UIを実装していく前提のモックです。タブレット運用を考慮して、まずは別画面ルートで保持しています。
+          </p>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
-              Sound（TODO）
+          <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+              <div className="text-sm font-medium text-white">Sound</div>
+              <div className="mt-2 text-sm text-zinc-500">TODO</div>
             </div>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
-              Alerts（TODO）
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+              <div className="text-sm font-medium text-white">Alerts</div>
+              <div className="mt-2 text-sm text-zinc-500">TODO</div>
             </div>
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4">
-              Theme（TODO）
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-4">
+              <div className="text-sm font-medium text-white">Theme</div>
+              <div className="mt-2 text-sm text-zinc-500">TODO</div>
             </div>
           </div>
-
-          <p className="mt-6 text-sm text-zinc-500">
-            ※ タブレット考慮でまずは別画面（route）。後でデスクトップのみダイアログ化も可能。
-          </p>
         </section>
       </div>
     </main>

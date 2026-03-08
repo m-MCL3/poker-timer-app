@@ -11,6 +11,7 @@ export class LocalStorageStorage implements StoragePort {
       window.localStorage.removeItem(key);
       return;
     }
+
     window.localStorage.setItem(key, value);
   }
 }

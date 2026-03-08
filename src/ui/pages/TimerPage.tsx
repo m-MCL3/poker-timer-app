@@ -17,18 +17,15 @@ export default function TimerPage() {
   }, [timerUsecase]);
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#1f2937_0%,#09090b_55%,#000000_100%)] px-4 py-5 text-white sm:px-6 lg:px-8">
+    <main className="min-h-screen px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
-        <header className="mb-5 flex items-start justify-between gap-4">
+        <header className="mb-6 flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs tracking-[0.36em] text-zinc-500">
-              TOURNAMENT TIMER
-            </div>
-            <h1 className="mt-2 text-2xl font-bold text-zinc-100 sm:text-3xl">
+            <div className="text-xs tracking-[0.35em] text-cyan-200/70">TOURNAMENT TIMER</div>
+            <h1 className="mt-2 text-3xl font-semibold text-white sm:text-4xl">
               {snapshot.title}
             </h1>
           </div>
-
           <MenuButton
             onResetRequested={() => {
               if (!confirm("Resetして idle に戻します。よろしいですか？")) {
@@ -41,30 +38,32 @@ export default function TimerPage() {
           />
         </header>
 
-        {snapshot.showBreakBanner ? (
-          <section className="mb-5 rounded-[2rem] border border-amber-400/30 bg-amber-500/10 px-5 py-4 text-amber-100 shadow-lg">
-            <div className="text-xs tracking-[0.3em] text-amber-300">BREAK TIME</div>
-          </section>
-        ) : null}
+        <div className="grid gap-6">
+          {snapshot.showBreakBanner ? (
+            <section className="rounded-[1.75rem] border border-amber-400/30 bg-amber-500/10 px-6 py-5 text-center shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
+              <div className="text-xs tracking-[0.35em] text-amber-200/80">BREAK TIME</div>
+              <div className="mt-2 text-3xl font-semibold text-amber-50">休憩中です</div>
+            </section>
+          ) : null}
 
-        <div className="grid gap-5">
           <TimerBoard
             status={snapshot.status}
             currentItemNumber={snapshot.currentItemNumber}
             totalItemCount={snapshot.totalItemCount}
             currentItemLabel={snapshot.currentItemLabel}
             remainingText={snapshot.remainingText}
+            progressPercent={snapshot.progressPercent}
             onToggleRequested={() => timerUsecase.toggle()}
-          />
-
-          <NextItemPanel
-            nextItemText={snapshot.nextItemText}
-            nextBreakText={snapshot.nextBreakText}
           />
 
           {snapshot.showCurrentBlinds ? (
             <BlindsPanel blindGroups={snapshot.currentBlindGroups} />
           ) : null}
+
+          <NextItemPanel
+            nextItemText={snapshot.nextItemText}
+            nextBreakText={snapshot.nextBreakText}
+          />
         </div>
       </div>
     </main>

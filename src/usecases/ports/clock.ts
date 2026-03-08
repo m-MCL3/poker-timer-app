@@ -1,3 +1,3 @@
-export type Clock = {
-  nowEpochMs: () => number;
-};
+export interface Clock {
+  nowEpochMs(): number;
+}

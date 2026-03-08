@@ -1,15 +1,9 @@
-import type { TimerRuntime } from "@/domain/models/timerRuntime";
-import type { TimerStructure } from "@/domain/models/timerStructure";
-
-export type TimerSessionState = {
-  structure: TimerStructure;
-  runtime: TimerRuntime;
-};
+import type { TimerState } from "@/domain/entities/timerState";
 
 export type RuntimeStoreListener = () => void;
 
-export type TimerRuntimeStore = {
-  getState: () => TimerSessionState;
-  setState: (nextState: TimerSessionState) => void;
-  subscribe: (listener: RuntimeStoreListener) => () => void;
-};
+export interface RuntimeStore {
+  getState(): TimerState;
+  setState(nextState: TimerState): void;
+  subscribe(listener: RuntimeStoreListener): () => void;
+}

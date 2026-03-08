@@ -9,46 +9,47 @@ type Props = {
 
 export default function MenuButton(props: Props) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const onDocumentClick = (event: MouseEvent) => {
-      if (!ref.current) {
+    const onDocumentMouseDown = (event: MouseEvent) => {
+      if (!rootRef.current) {
         return;
       }
-      if (!ref.current.contains(event.target as Node)) {
+
+      if (!rootRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
 
-    document.addEventListener("mousedown", onDocumentClick);
-    return () => document.removeEventListener("mousedown", onDocumentClick);
+    document.addEventListener("mousedown", onDocumentMouseDown);
+    return () => document.removeEventListener("mousedown", onDocumentMouseDown);
   }, []);
 
-  const itemClass =
-    "w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-zinc-800/60 transition-colors";
+  const itemClassName =
+    "w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-200 transition hover:bg-zinc-800/70";
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
-        className="rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-lg shadow-sm hover:bg-zinc-800/80"
         aria-label="menu"
         title="Menu"
         onClick={(event) => {
           event.stopPropagation();
-          setOpen((current) => !current);
+          setOpen((prev) => !prev);
         }}
+        className="grid h-12 w-12 place-items-center rounded-2xl border border-zinc-800 bg-zinc-950/70 text-xl text-white transition hover:border-cyan-400/40 hover:bg-zinc-900"
       >
         ☰
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-zinc-800 bg-zinc-900/95 p-2 shadow-2xl backdrop-blur">
+        <div className="absolute right-0 top-14 z-10 min-w-60 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-2xl backdrop-blur">
           <button
             type="button"
-            className={itemClass}
+            className={itemClassName}
             onClick={() => {
               setOpen(false);
               props.onResetRequested();
@@ -58,7 +59,7 @@ export default function MenuButton(props: Props) {
           </button>
           <button
             type="button"
-            className={itemClass}
+            className={itemClassName}
             onClick={() => {
               setOpen(false);
               props.onNextRequested();
@@ -68,7 +69,7 @@ export default function MenuButton(props: Props) {
           </button>
           <button
             type="button"
-            className={itemClass}
+            className={itemClassName}
             onClick={() => {
               setOpen(false);
               props.onPrevRequested();
@@ -76,10 +77,10 @@ export default function MenuButton(props: Props) {
           >
             Previous Level
           </button>
-          <div className="my-2 h-px bg-zinc-800" />
+          <div className="my-2 border-t border-zinc-800" />
           <button
             type="button"
-            className={itemClass}
+            className={itemClassName}
             onClick={() => {
               setOpen(false);
               navigate("/editor");
@@ -89,7 +90,7 @@ export default function MenuButton(props: Props) {
           </button>
           <button
             type="button"
-            className={itemClass}
+            className={itemClassName}
             onClick={() => {
               setOpen(false);
               navigate("/settings");

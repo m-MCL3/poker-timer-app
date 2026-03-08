@@ -1,11 +1,13 @@
-import type { PresetSummary } from "@/domain/models/preset";
-import type { TimerStructure } from "@/domain/models/timerStructure";
-import { sortPresetSummaries } from "@/domain/models/preset";
 import {
-  deserializeTimerStructure,
-  serializeTimerStructure,
-} from "@/infrastructure/persistence/timerStructureSchema";
-import type { PresetRepository } from "@/usecases/ports/presetRepository";
+  sortPresetSummaries,
+  type StructurePresetSummary,
+} from "@/domain/entities/structurePreset";
+import type { TournamentStructure } from "@/domain/entities/tournamentStructure";
+import {
+  deserializeTournamentStructure,
+  serializeTournamentStructure,
+} from "@/infrastructure/persistence/tournamentStructureSchema";
+import type { StructurePresetRepository } from "@/usecases/ports/structurePresetRepository";
 import type { StoragePort } from "@/usecases/ports/storage";
 
 type StoredPresetIndexItem = {
@@ -15,11 +17,11 @@ type StoredPresetIndexItem = {
 
 const INDEX_KEY = "pokerTimer:structures:index";
 
-function itemKey(name: string): string {
+function presetKey(name: string): string {
   return `pokerTimer:structures:${name}`;
 }
 
-function safeParseIndex(raw: string | null): PresetSummary[] {
+function safeParsePresetIndex(raw: string | null): StructurePresetSummary[] {
   if (!raw) {
     return [];
   }
@@ -58,45 +60,46 @@ function safeParseIndex(raw: string | null): PresetSummary[] {
   }
 }
 
-export class TimerPresetRepository implements PresetRepository {
+export class LocalStructurePresetRepository implements StructurePresetRepository {
   constructor(private readonly storage: StoragePort) {}
 
-  async listPresets(): Promise<PresetSummary[]> {
-    return safeParseIndex(await this.storage.load(INDEX_KEY));
+  async listPresets(): Promise<StructurePresetSummary[]> {
+    return safeParsePresetIndex(await this.storage.load(INDEX_KEY));
   }
 
-  async savePreset(name: string, structure: TimerStructure): Promise<void> {
+  async savePreset(name: string, structure: TournamentStructure): Promise<void> {
     const updatedAtEpochMs = Date.now();
-    await this.storage.save(itemKey(name), serializeTimerStructure(structure));
+    await this.storage.save(presetKey(name), serializeTournamentStructure(structure));
 
     const current = await this.listPresets();
     const next = sortPresetSummaries([
       ...current.filter((preset) => preset.name !== name),
       { name, updatedAtEpochMs },
     ]);
+
     await this.storage.save(INDEX_KEY, JSON.stringify(next));
   }
 
-  async loadPreset(name: string): Promise<TimerStructure | null> {
-    const raw = await this.storage.load(itemKey(name));
+  async loadPreset(name: string): Promise<TournamentStructure | null> {
+    const raw = await this.storage.load(presetKey(name));
     if (!raw) {
       return null;
     }
-    return deserializeTimerStructure(raw);
+
+    return deserializeTournamentStructure(raw);
   }
 
   async renamePreset(currentName: string, nextName: string): Promise<void> {
-    const raw = await this.storage.load(itemKey(currentName));
+    const raw = await this.storage.load(presetKey(currentName));
     if (!raw) {
       throw new Error("変更元のプリセットが見つかりません。");
     }
 
-    await this.storage.save(itemKey(nextName), raw);
-    await this.storage.save(itemKey(currentName), "");
+    await this.storage.save(presetKey(nextName), raw);
+    await this.storage.save(presetKey(currentName), "");
 
     const current = await this.listPresets();
     const currentItem = current.find((preset) => preset.name === currentName);
-
     const next = sortPresetSummaries([
       ...current.filter((preset) => preset.name !== currentName),
       {
@@ -104,11 +107,12 @@ export class TimerPresetRepository implements PresetRepository {
         updatedAtEpochMs: currentItem?.updatedAtEpochMs ?? Date.now(),
       },
     ]);
+
     await this.storage.save(INDEX_KEY, JSON.stringify(next));
   }
 
   async deletePreset(name: string): Promise<void> {
-    await this.storage.save(itemKey(name), "");
+    await this.storage.save(presetKey(name), "");
     const next = (await this.listPresets()).filter((preset) => preset.name !== name);
     await this.storage.save(INDEX_KEY, JSON.stringify(next));
   }

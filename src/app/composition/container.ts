@@ -1,20 +1,18 @@
-import { BrowserIntervalScheduler } from "@/adapters/clock/browserIntervalScheduler";
 import { SystemClock } from "@/adapters/clock/systemClock";
 import { defaultTimerStructure } from "@/adapters/mock/defaultTimerStructure";
 import { LocalStorageStorage } from "@/adapters/storage/localStorageStorage";
-import { createInitialTimerRuntime } from "@/domain/models/timerRuntime";
-import { TimerPresetRepository } from "@/infrastructure/persistence/timerPresetRepository";
+import { createInitialTimerState } from "@/domain/entities/timerState";
+import { LocalStructurePresetRepository } from "@/infrastructure/persistence/structurePresetRepository";
 import { EditorUsecase } from "@/usecases/editor/editorUsecase";
 import { PresetUsecase } from "@/usecases/preset/presetUsecase";
 import type {
+  RuntimeStore,
   RuntimeStoreListener,
-  TimerRuntimeStore,
-  TimerSessionState,
 } from "@/usecases/ports/runtimeStore";
 import { TimerController } from "@/usecases/timer/timerController";
 import { TimerUsecase } from "@/usecases/timer/timerUsecase";
 
-function createRuntimeStore(initialState: TimerSessionState): TimerRuntimeStore {
+function createRuntimeStore(initialState = createInitialTimerState(defaultTimerStructure)): RuntimeStore {
   let state = initialState;
   const listeners = new Set<RuntimeStoreListener>();
 
@@ -42,28 +40,16 @@ export type AppContainer = {
 
 export function createContainer(): AppContainer {
   const clock = new SystemClock();
-  const scheduler = new BrowserIntervalScheduler();
-  const storage = new LocalStorageStorage();
-  const presetRepository = new TimerPresetRepository(storage);
-
-  const runtimeStore = createRuntimeStore({
-    structure: defaultTimerStructure,
-    runtime: createInitialTimerRuntime(),
-  });
-
+  const runtimeStore = createRuntimeStore();
   const timerUsecase = new TimerUsecase({
     clock,
     store: runtimeStore,
   });
-
-  const timerController = new TimerController({
-    scheduler,
-    timerUsecase,
-    tickIntervalMs: 250,
-  });
-
+  const timerController = new TimerController(timerUsecase);
   const editorUsecase = new EditorUsecase();
-  const presetUsecase = new PresetUsecase(presetRepository);
+  const presetUsecase = new PresetUsecase(
+    new LocalStructurePresetRepository(new LocalStorageStorage()),
+  );
 
   return {
     timerUsecase,

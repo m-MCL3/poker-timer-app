@@ -28,5 +28,6 @@ export function useContainer(): AppContainer {
   if (!value) {
     throw new Error("ContainerProvider is missing.");
   }
+
   return value;
 }

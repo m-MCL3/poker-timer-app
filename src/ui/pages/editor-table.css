@@ -1,10 +1,16 @@
-.editor-table th,
-.editor-table td {
-  vertical-align: top;
+.editor-grid {
+  display: grid;
+  gap: 1px;
+  background: rgba(63, 63, 70, 0.6);
+  border-radius: 1rem;
+  overflow: hidden;
 }
 
-.editor-table input,
-.editor-table select,
-.editor-table button {
-  min-height: 2.5rem;
+.editor-grid__row {
+  display: grid;
+  background: rgba(9, 9, 11, 0.9);
+}
+
+.editor-grid__cell {
+  min-width: 0;
 }

@@ -1,158 +1,32 @@
 import {
   GAME_KIND_ORDER,
-  cloneBlindGroups,
-  createDefaultBlindGroups,
-  normalizeBlindGroups,
-  upsertBlindValue,
-} from "@/domain/models/blinds";
-import type { EditorState, EditOperation } from "@/domain/models/editor";
+  type GameKindId,
+} from "@/domain/entities/blinds";
+import { applyEditOperations, type EditOperation } from "@/domain/entities/editOperation";
 import {
-  assertTimerStructure,
+  assertTournamentStructure,
   buildDerivedItemName,
-  cloneTimerStructure,
-  createBreakItem,
-  createLevelItem,
-  type LevelItem,
-  type TimerItem,
-  type TimerStructure,
-} from "@/domain/models/timerStructure";
-import type {
-  EditorRowSnapshot,
-  EditorSnapshot,
-} from "@/usecases/editor/editorSnapshot";
+  cloneTournamentStructure,
+  type TournamentStructure,
+} from "@/domain/entities/tournamentStructure";
+import type { EditorRowSnapshot, EditorSnapshot } from "@/usecases/editor/editorSnapshot";
 
-function createId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+export type EditorState = {
+  baseStructure: TournamentStructure;
+  operations: EditOperation[];
+  undoneOperations: EditOperation[];
+  isEditable: boolean;
+};
+
+function toCellText(value: number | null): string {
+  return value === null ? "" : String(value);
 }
 
-function createInsertedLevel(
-  structure: TimerStructure,
-  itemIndex: number,
-): TimerItem {
-  const inherited = findNearestLevelBlindGroups(structure.items, itemIndex);
-  return createLevelItem({
-    id: createId("lv"),
-    durationSec: structure.defaultLevelDurationSec,
-    blindGroups: inherited,
-  });
-}
-
-function createInsertedBreak(structure: TimerStructure): TimerItem {
-  return createBreakItem({
-    id: createId("br"),
-    durationSec: structure.defaultBreakDurationSec,
-  });
-}
-
-function findNearestLevelBlindGroups(
-  items: TimerItem[],
-  baseIndex: number,
-): LevelItem["blindGroups"] {
-  for (let index = baseIndex; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item?.kind === "level") {
-      return cloneBlindGroups(item.blindGroups);
-    }
-  }
-
-  for (let index = baseIndex + 1; index < items.length; index += 1) {
-    const item = items[index];
-    if (item?.kind === "level") {
-      return cloneBlindGroups(item.blindGroups);
-    }
-  }
-
-  return createDefaultBlindGroups();
-}
-
-function applyOperation(
-  structure: TimerStructure,
-  operation: EditOperation,
-): TimerStructure {
-  const next = cloneTimerStructure(structure);
-  const item = next.items[operation.itemIndex];
-
-  switch (operation.type) {
-    case "insert-level-after": {
-      next.items.splice(
-        operation.itemIndex + 1,
-        0,
-        createInsertedLevel(next, operation.itemIndex),
-      );
-      return next;
-    }
-
-    case "insert-break-after": {
-      next.items.splice(operation.itemIndex + 1, 0, createInsertedBreak(next));
-      return next;
-    }
-
-    case "remove-item": {
-      if (next.items.length > 1) {
-        next.items.splice(operation.itemIndex, 1);
-      }
-      return next;
-    }
-
-    case "change-item-kind": {
-      if (!item || item.kind === operation.kind) {
-        return next;
-      }
-
-      if (operation.kind === "break") {
-        next.items[operation.itemIndex] = createBreakItem({
-          id: item.id,
-          name: item.name,
-          durationSec: item.durationSec,
-        });
-        return next;
-      }
-
-      next.items[operation.itemIndex] = createLevelItem({
-        id: item.id,
-        name: item.name,
-        durationSec: item.durationSec,
-        blindGroups: findNearestLevelBlindGroups(
-          next.items,
-          operation.itemIndex - 1,
-        ),
-      });
-      return next;
-    }
-
-    case "set-duration-minutes": {
-      if (!item) {
-        return next;
-      }
-      item.durationSec = Math.max(0, Math.floor(operation.minutes)) * 60;
-      return next;
-    }
-
-    case "set-blind-value": {
-      if (!item || item.kind !== "level") {
-        return next;
-      }
-      item.blindGroups = upsertBlindValue(
-        normalizeBlindGroups(item.blindGroups),
-        operation.gameKind,
-        operation.slot,
-        operation.value,
-      );
-      return next;
-    }
-
-    default:
-      return next;
-  }
-}
-
-function toRowSnapshot(
-  structure: TimerStructure,
-  item: TimerItem,
+function createRowSnapshot(
+  structure: TournamentStructure,
   itemIndex: number,
 ): EditorRowSnapshot {
-  const blindGroups =
-    item.kind === "level" ? normalizeBlindGroups(item.blindGroups) : [];
+  const item = structure.items[itemIndex]!;
 
   return {
     itemId: item.id,
@@ -160,26 +34,14 @@ function toRowSnapshot(
     itemNumber: itemIndex + 1,
     itemKind: item.kind,
     itemLabel: buildDerivedItemName(structure, itemIndex),
-    durationMinutesText: String(Math.floor(item.durationSec / 60)),
-    blindCells: GAME_KIND_ORDER.map((gameKind) => {
-      const group = blindGroups.find(
-        (blindGroup) => blindGroup.gameKind === gameKind,
-      );
-
+    durationMinutesText: String(item.durationMinutes),
+    blindCells: GAME_KIND_ORDER.map((gameKind: GameKindId) => {
+      const triple = item.kind === "level" ? item.blinds[gameKind] : null;
       return {
         gameKind,
-        sb:
-          group?.values.sb === null || group?.values.sb === undefined
-            ? ""
-            : String(group.values.sb),
-        bb:
-          group?.values.bb === null || group?.values.bb === undefined
-            ? ""
-            : String(group.values.bb),
-        ante:
-          group?.values.ante === null || group?.values.ante === undefined
-            ? ""
-            : String(group.values.ante),
+        sb: toCellText(triple?.sb ?? null),
+        bb: toCellText(triple?.bb ?? null),
+        ante: toCellText(triple?.ante ?? null),
       };
     }),
     canRemove: structure.items.length > 1,
@@ -189,35 +51,21 @@ function toRowSnapshot(
 
 export class EditorUsecase {
   createState(input: {
-    structure: TimerStructure;
+    structure: TournamentStructure;
     isEditable: boolean;
   }): EditorState {
     return {
-      baseStructure: cloneTimerStructure(input.structure),
+      baseStructure: cloneTournamentStructure(input.structure),
       operations: [],
       undoneOperations: [],
       isEditable: input.isEditable,
     };
   }
 
-  materializeStructure(state: EditorState): TimerStructure {
-    const materialized = state.operations.reduce(
-      (current, operation) => applyOperation(current, operation),
-      cloneTimerStructure(state.baseStructure),
+  materializeStructure(state: EditorState): TournamentStructure {
+    return assertTournamentStructure(
+      applyEditOperations(state.baseStructure, state.operations),
     );
-    return assertTimerStructure(materialized);
-  }
-
-  isDirty(state: EditorState): boolean {
-    return state.operations.length > 0;
-  }
-
-  canUndo(state: EditorState): boolean {
-    return state.operations.length > 0;
-  }
-
-  canRedo(state: EditorState): boolean {
-    return state.undoneOperations.length > 0;
   }
 
   appendOperation(input: {
@@ -232,41 +80,41 @@ export class EditorUsecase {
   }
 
   undo(state: EditorState): EditorState {
-    if (!state.operations.length) {
+    if (state.operations.length === 0) {
       return state;
     }
 
     const nextOperations = state.operations.slice(0, -1);
-    const lastOperation = state.operations[state.operations.length - 1];
+    const undone = state.operations[state.operations.length - 1]!;
 
     return {
       ...state,
       operations: nextOperations,
-      undoneOperations: [lastOperation, ...state.undoneOperations],
+      undoneOperations: [undone, ...state.undoneOperations],
     };
   }
 
   redo(state: EditorState): EditorState {
-    if (!state.undoneOperations.length) {
+    if (state.undoneOperations.length === 0) {
       return state;
     }
 
-    const [nextOperation, ...remainingUndone] = state.undoneOperations;
+    const [nextOperation, ...remaining] = state.undoneOperations;
 
     return {
       ...state,
       operations: [...state.operations, nextOperation],
-      undoneOperations: remainingUndone,
+      undoneOperations: remaining,
     };
   }
 
   replaceBaseStructure(input: {
     state: EditorState;
-    structure: TimerStructure;
+    structure: TournamentStructure;
   }): EditorState {
     return {
       ...input.state,
-      baseStructure: cloneTimerStructure(input.structure),
+      baseStructure: cloneTournamentStructure(input.structure),
       operations: [],
       undoneOperations: [],
     };
@@ -280,10 +128,7 @@ export class EditorUsecase {
     };
   }
 
-  setEditable(input: {
-    state: EditorState;
-    isEditable: boolean;
-  }): EditorState {
+  setEditable(input: { state: EditorState; isEditable: boolean }): EditorState {
     return {
       ...input.state,
       isEditable: input.isEditable,
@@ -295,12 +140,12 @@ export class EditorUsecase {
 
     return {
       title: structure.name,
-      isDirty: this.isDirty(state),
+      isDirty: state.operations.length > 0,
       isEditable: state.isEditable,
-      canUndo: this.canUndo(state),
-      canRedo: this.canRedo(state),
-      rows: structure.items.map((item, itemIndex) =>
-        toRowSnapshot(structure, item, itemIndex),
+      canUndo: state.operations.length > 0,
+      canRedo: state.undoneOperations.length > 0,
+      rows: structure.items.map((_, itemIndex) =>
+        createRowSnapshot(structure, itemIndex),
       ),
     };
   }
