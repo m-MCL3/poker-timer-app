@@ -5,8 +5,9 @@ import {
   createInitialTimerState,
   type TimerState,
 } from "@/domain/entities/timerState";
-import type { StoragePort } from "@/usecases/ports/storage";
 import { TournamentStructureStorage } from "@/infrastructure/persistence/tournamentStructureStorage";
+import type { StoragePort } from "@/usecases/ports/storage";
+import { TimerUsecase } from "@/usecases/timer/timerUsecase";
 
 type TimerStoreListener = () => void;
 
@@ -28,7 +29,9 @@ function createTimerStore(initialState: TimerState): TimerStore {
     },
     subscribe: (listener) => {
       listeners.add(listener);
-      return () => listeners.delete(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
@@ -38,6 +41,7 @@ export type AppContainer = {
   storage: StoragePort;
   timerStore: TimerStore;
   structureStorage: TournamentStructureStorage;
+  timerUsecase: TimerUsecase;
 };
 
 export function createContainer(): AppContainer {
@@ -47,11 +51,13 @@ export function createContainer(): AppContainer {
     createInitialTimerState(sampleTournamentStructure),
   );
   const structureStorage = new TournamentStructureStorage(storage);
+  const timerUsecase = new TimerUsecase({ clock, timerStore });
 
   return {
     clock,
     storage,
     timerStore,
     structureStorage,
+    timerUsecase,
   };
 }

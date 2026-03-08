@@ -1,18 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useContainer } from "@/app/composition/containerContext";
-import type { TimerState } from "@/domain/entities/timerState";
-import {
-  createTimerSnapshot,
-  goToNextItem,
-  goToPreviousItem,
-  resetTimer,
-  tickTimer,
-  toggleTimer,
-} from "@/usecases/timer/timerUsecase";
-import TimerBoard from "@/ui/components/TimerBoard";
 import BlindsPanel from "@/ui/components/BlindsPanel";
-import NextItemPanel from "@/ui/components/NextItemPanel";
 import MenuButton from "@/ui/components/MenuButton";
+import NextItemPanel from "@/ui/components/NextItemPanel";
+import TimerBoard from "@/ui/components/TimerBoard";
+import type { TimerSnapshot } from "@/usecases/timer/timerSnapshot";
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
@@ -25,78 +17,63 @@ function formatMMSS(ms: number): string {
   return `${pad2(minutes)}:${pad2(seconds)}`;
 }
 
+function formatNextBreakText(snapshot: TimerSnapshot): string {
+  if (snapshot.nextBreakRemainingMs === null) {
+    return "NO BREAK";
+  }
+
+  if (snapshot.nextBreakRemainingMs === 0) {
+    return "NOW";
+  }
+
+  return formatMMSS(snapshot.nextBreakRemainingMs);
+}
+
 export default function TimerPage() {
-  const { clock, timerStore } = useContainer();
-  const [timerState, setTimerState] = useState<TimerState>(() =>
-    timerStore.getState(),
-  );
-  const [nowEpochMs, setNowEpochMs] = useState<number>(() => clock.nowEpochMs());
+  const { timerUsecase } = useContainer();
+  const [snapshot, setSnapshot] = useState(() => timerUsecase.getSnapshot());
 
   useEffect(() => {
-    return timerStore.subscribe(() => {
-      setTimerState(timerStore.getState());
+    setSnapshot(timerUsecase.getSnapshot());
+
+    const unsubscribe = timerUsecase.subscribe(() => {
+      setSnapshot(timerUsecase.getSnapshot());
     });
-  }, [timerStore]);
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      const now = clock.nowEpochMs();
-      setNowEpochMs(now);
+    const stopAutoTick = timerUsecase.startAutoTick(250);
 
-      timerStore.setState(
-        tickTimer({
-          state: timerStore.getState(),
-          nowEpochMs: now,
-        }),
-      );
-    }, 250);
-
-    return () => window.clearInterval(intervalId);
-  }, [clock, timerStore]);
-
-  const snapshot = useMemo(
-    () =>
-      createTimerSnapshot({
-        state: timerState,
-        nowEpochMs,
-      }),
-    [nowEpochMs, timerState],
-  );
+    return () => {
+      stopAutoTick();
+      unsubscribe();
+    };
+  }, [timerUsecase]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-[760px] flex-col gap-4 px-4 py-6 text-zinc-50">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">{snapshot.title}</h1>
+    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 text-white">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs font-semibold tracking-[0.3em] text-slate-400">
+            TOURNAMENT TIMER
+          </div>
+          <h1 className="mt-2 text-2xl font-semibold text-white">
+            {snapshot.title}
+          </h1>
+        </div>
 
         <MenuButton
           onResetRequested={() => {
             if (!confirm("Resetして idle に戻します。よろしいですか？")) {
               return;
             }
-
-            timerStore.setState(resetTimer(timerStore.getState()));
+            timerUsecase.reset();
           }}
-          onNextRequested={() =>
-            timerStore.setState(
-              goToNextItem({
-                state: timerStore.getState(),
-                nowEpochMs: clock.nowEpochMs(),
-              }),
-            )
-          }
-          onPrevRequested={() =>
-            timerStore.setState(
-              goToPreviousItem({
-                state: timerStore.getState(),
-                nowEpochMs: clock.nowEpochMs(),
-              }),
-            )
-          }
+          onNextRequested={() => timerUsecase.next()}
+          onPrevRequested={() => timerUsecase.previous()}
         />
       </div>
 
       {snapshot.showBreakBanner && (
-        <div className="rounded-2xl border border-amber-400/40 bg-amber-500/10 px-4 py-3 text-center text-sm font-semibold tracking-[0.2em] text-amber-100">
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold tracking-[0.2em] text-amber-200">
           BREAK TIME
         </div>
       )}
@@ -107,21 +84,17 @@ export default function TimerPage() {
         totalItemCount={snapshot.totalItemCount}
         currentItemLabel={snapshot.currentItemLabel}
         remainingText={formatMMSS(snapshot.remainingMs)}
-        onTap={() =>
-          timerStore.setState(
-            toggleTimer({
-              state: timerStore.getState(),
-              nowEpochMs: clock.nowEpochMs(),
-            }),
-          )
-        }
+        onToggleRequested={() => timerUsecase.toggle()}
+      />
+
+      <NextItemPanel
+        nextItemText={snapshot.nextItemText}
+        nextBreakText={formatNextBreakText(snapshot)}
       />
 
       {snapshot.showCurrentBlinds && (
-        <BlindsPanel blinds={snapshot.currentBlindGroups} />
+        <BlindsPanel blindGroups={snapshot.currentBlindGroups} />
       )}
-
-      <NextItemPanel text={snapshot.nextItemText} />
     </div>
   );
 }
