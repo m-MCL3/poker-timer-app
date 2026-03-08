@@ -30,7 +30,9 @@ export type TimerSnapshot = {
   nextBreakRemainingMs: number | null;
 };
 
-export function createBlindGroupSnapshot(blindGroups: BlindGroup[]): SnapshotBlindGroup[] {
+export function createBlindGroupSnapshot(
+  blindGroups: BlindGroup[],
+): SnapshotBlindGroup[] {
   return blindGroups.map((group) => ({
     gameKind: group.gameKind,
     blinds: {

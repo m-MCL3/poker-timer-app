@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-export default function MenuButton(props: {
+type Props = {
   onResetRequested: () => void;
   onNextRequested: () => void;
   onPrevRequested: () => void;
-}) {
+};
+
+export default function MenuButton(props: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
-  const nav = useNavigate();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const onDocClick = (event: MouseEvent) => {
+    const onDocumentClick = (event: MouseEvent) => {
       if (!ref.current) {
         return;
       }
@@ -20,32 +22,33 @@ export default function MenuButton(props: {
       }
     };
 
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("mousedown", onDocumentClick);
+    return () => document.removeEventListener("mousedown", onDocumentClick);
   }, []);
 
-  const itemBase =
-    "w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-zinc-800/60";
+  const itemClass =
+    "w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-zinc-800/60 transition-colors";
 
   return (
-    <div className="relative" ref={ref}>
+    <div ref={ref} className="relative">
       <button
         type="button"
-        className="rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-xs text-zinc-200"
-        onClick={(event) => {
-          event.stopPropagation();
-          setOpen((prev) => !prev);
-        }}
+        className="rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-lg shadow-sm hover:bg-zinc-800/80"
         aria-label="menu"
         title="Menu"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
       >
         ☰
       </button>
 
-      {open && (
-        <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-zinc-800 bg-zinc-950/95 p-2 shadow-lg">
+      {open ? (
+        <div className="absolute right-0 z-20 mt-2 w-56 rounded-2xl border border-zinc-800 bg-zinc-900/95 p-2 shadow-2xl backdrop-blur">
           <button
-            className={itemBase}
+            type="button"
+            className={itemClass}
             onClick={() => {
               setOpen(false);
               props.onResetRequested();
@@ -53,9 +56,9 @@ export default function MenuButton(props: {
           >
             Reset…
           </button>
-
           <button
-            className={itemBase}
+            type="button"
+            className={itemClass}
             onClick={() => {
               setOpen(false);
               props.onNextRequested();
@@ -63,9 +66,9 @@ export default function MenuButton(props: {
           >
             Next Level
           </button>
-
           <button
-            className={itemBase}
+            type="button"
+            className={itemClass}
             onClick={() => {
               setOpen(false);
               props.onPrevRequested();
@@ -73,32 +76,29 @@ export default function MenuButton(props: {
           >
             Previous Level
           </button>
-
           <div className="my-2 h-px bg-zinc-800" />
-
           <button
-            className={itemBase}
+            type="button"
+            className={itemClass}
             onClick={() => {
               setOpen(false);
-              nav("/editor");
+              navigate("/editor");
             }}
           >
             Edit Structure…
           </button>
-
-          <div className="my-2 h-px bg-zinc-800" />
-
           <button
-            className={itemBase}
+            type="button"
+            className={itemClass}
             onClick={() => {
               setOpen(false);
-              nav("/settings");
+              navigate("/settings");
             }}
           >
             Settings…
           </button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

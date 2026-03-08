@@ -1,21 +1,18 @@
 import { createDefaultBlindGroups } from "@/domain/models/blinds";
-import {
-  createInitialTimerRuntime,
-  type TimerRuntime,
-  type TimerStatus,
-} from "@/domain/models/timerRuntime";
+import { createInitialTimerRuntime, type TimerRuntime, type TimerStatus } from "@/domain/models/timerRuntime";
 import {
   assertTimerStructure,
+  buildDerivedItemName,
   cloneTimerStructure,
+  countLevelsUpToIndex,
   type LevelItem,
   type TimerItem,
   type TimerStructure,
 } from "@/domain/models/timerStructure";
 import type { Clock } from "@/usecases/ports/clock";
 import type { CancelableTask, IntervalScheduler } from "@/usecases/ports/intervalScheduler";
-import type { TimerRuntimeStore, TimerSessionState } from "@/usecases/ports/timerRuntimeStore";
-import type { TimerSnapshot } from "@/usecases/timer/timerSnapshot";
-import { createBlindGroupSnapshot } from "@/usecases/timer/timerSnapshot";
+import type { TimerRuntimeStore, TimerSessionState } from "@/usecases/ports/runtimeStore";
+import { createBlindGroupSnapshot, type TimerSnapshot } from "@/usecases/timer/timerSnapshot";
 
 function clampNonNegative(value: number): number {
   return value < 0 ? 0 : value;
@@ -47,39 +44,19 @@ function computeRemainingMs(state: TimerSessionState, nowEpochMs: number): numbe
   return 0;
 }
 
-function countLevelsUpToIndex(structure: TimerStructure, itemIndex: number): number {
-  let levelCount = 0;
-  for (let index = 0; index <= itemIndex; index += 1) {
-    if (structure.items[index]?.kind === "level") {
-      levelCount += 1;
-    }
-  }
-  return Math.max(levelCount, 1);
-}
-
 function buildBlindText(item: LevelItem): string {
   return item.blindGroups
     .map((group) => {
       const sb = group.values.sb === null || group.values.sb === 0 ? "-" : String(group.values.sb);
       const bb = group.values.bb === null || group.values.bb === 0 ? "-" : String(group.values.bb);
       const ante =
-        group.values.ante === null || group.values.ante === 0 ? "-" : String(group.values.ante);
+        group.values.ante === null || group.values.ante === 0
+          ? "-"
+          : String(group.values.ante);
+
       return `${group.gameKind.toUpperCase()}: ${sb} / ${bb} / ${ante}`;
     })
     .join(" | ");
-}
-
-function buildCurrentItemLabel(structure: TimerStructure, itemIndex: number): string {
-  const item = structure.items[itemIndex];
-  if (!item) {
-    return "";
-  }
-
-  if (item.kind === "break") {
-    return "BREAK";
-  }
-
-  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex)}`;
 }
 
 function buildNextItemText(structure: TimerStructure, itemIndex: number): string {
@@ -92,7 +69,9 @@ function buildNextItemText(structure: TimerStructure, itemIndex: number): string
     return "BREAK";
   }
 
-  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex + 1)} | ${buildBlindText(nextItem)}`;
+  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex + 1)} | ${buildBlindText(
+    nextItem,
+  )}`;
 }
 
 function computeNextBreakRemainingMs(
@@ -105,7 +84,11 @@ function computeNextBreakRemainingMs(
   }
 
   let totalMs = computeRemainingMs(state, nowEpochMs);
-  for (let index = state.runtime.currentIndex + 1; index < state.structure.items.length; index += 1) {
+  for (
+    let index = state.runtime.currentIndex + 1;
+    index < state.structure.items.length;
+    index += 1
+  ) {
     const item = state.structure.items[index];
     if (item.kind === "break") {
       return totalMs;
@@ -128,9 +111,12 @@ function moveToItem(input: {
   itemIndex: number;
   nowEpochMs: number;
 }): TimerSessionState {
-  const durationMs = input.state.structure.items[input.itemIndex]?.durationSec * 1000 ?? 0;
+  const targetItem = input.state.structure.items[input.itemIndex];
+  const durationMs = targetItem ? targetItem.durationSec * 1000 : 0;
   const baseStatus: TimerStatus =
-    input.state.runtime.status === "finished" ? "idle" : input.state.runtime.status;
+    input.state.runtime.status === "finished"
+      ? "idle"
+      : input.state.runtime.status;
 
   if (baseStatus === "running") {
     return withRuntime(input.state, {
@@ -188,12 +174,13 @@ function advanceRunningTimer(input: {
     }
 
     const nextItem = nextState.structure.items[nextIndex];
+    const startEpochMs = nextState.runtime.endsAtEpochMs ?? input.nowEpochMs;
+
     nextState = withRuntime(nextState, {
       status: "running",
       currentIndex: nextIndex,
-      startedAtEpochMs: nextState.runtime.endsAtEpochMs ?? input.nowEpochMs,
-      endsAtEpochMs:
-        (nextState.runtime.endsAtEpochMs ?? input.nowEpochMs) + nextItem.durationSec * 1000,
+      startedAtEpochMs: startEpochMs,
+      endsAtEpochMs: startEpochMs + nextItem.durationSec * 1000,
       remainingMsWhenPaused: null,
     });
   }
@@ -201,7 +188,7 @@ function advanceRunningTimer(input: {
   return nextState;
 }
 
-function syncTimerState(input: {
+function syncState(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
@@ -212,12 +199,12 @@ function startTimer(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  const syncedState = syncTimerState(input);
-  return withRuntime(syncedState, {
+  const synced = syncState(input);
+  return withRuntime(synced, {
     status: "running",
-    currentIndex: syncedState.runtime.currentIndex,
+    currentIndex: synced.runtime.currentIndex,
     startedAtEpochMs: input.nowEpochMs,
-    endsAtEpochMs: input.nowEpochMs + currentItemDurationMs(syncedState),
+    endsAtEpochMs: input.nowEpochMs + currentItemDurationMs(synced),
     remainingMsWhenPaused: null,
   });
 }
@@ -226,17 +213,17 @@ function pauseTimer(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  const syncedState = syncTimerState(input);
-  if (syncedState.runtime.status !== "running") {
-    return syncedState;
+  const synced = syncState(input);
+  if (synced.runtime.status !== "running") {
+    return synced;
   }
 
-  return withRuntime(syncedState, {
+  return withRuntime(synced, {
     status: "paused",
-    currentIndex: syncedState.runtime.currentIndex,
+    currentIndex: synced.runtime.currentIndex,
     startedAtEpochMs: null,
     endsAtEpochMs: null,
-    remainingMsWhenPaused: computeRemainingMs(syncedState, input.nowEpochMs),
+    remainingMsWhenPaused: computeRemainingMs(synced, input.nowEpochMs),
   });
 }
 
@@ -244,13 +231,13 @@ function resumeTimer(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  const syncedState = syncTimerState(input);
+  const synced = syncState(input);
   const remainingMs =
-    syncedState.runtime.remainingMsWhenPaused ?? currentItemDurationMs(syncedState);
+    synced.runtime.remainingMsWhenPaused ?? currentItemDurationMs(synced);
 
-  return withRuntime(syncedState, {
+  return withRuntime(synced, {
     status: "running",
-    currentIndex: syncedState.runtime.currentIndex,
+    currentIndex: synced.runtime.currentIndex,
     startedAtEpochMs: input.nowEpochMs,
     endsAtEpochMs: input.nowEpochMs + remainingMs,
     remainingMsWhenPaused: null,
@@ -261,22 +248,22 @@ function toggleTimer(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  const syncedState = syncTimerState(input);
+  const synced = syncState(input);
 
-  if (syncedState.runtime.status === "idle") {
-    return startTimer({ state: syncedState, nowEpochMs: input.nowEpochMs });
+  if (synced.runtime.status === "idle") {
+    return startTimer({ state: synced, nowEpochMs: input.nowEpochMs });
   }
 
-  if (syncedState.runtime.status === "running") {
-    return pauseTimer({ state: syncedState, nowEpochMs: input.nowEpochMs });
+  if (synced.runtime.status === "running") {
+    return pauseTimer({ state: synced, nowEpochMs: input.nowEpochMs });
   }
 
-  if (syncedState.runtime.status === "paused") {
-    return resumeTimer({ state: syncedState, nowEpochMs: input.nowEpochMs });
+  if (synced.runtime.status === "paused") {
+    return resumeTimer({ state: synced, nowEpochMs: input.nowEpochMs });
   }
 
   return {
-    structure: syncedState.structure,
+    structure: synced.structure,
     runtime: createInitialTimerRuntime(),
   };
 }
@@ -285,7 +272,7 @@ function tickTimer(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  return syncTimerState(input);
+  return syncState(input);
 }
 
 function resetTimer(state: TimerSessionState): TimerSessionState {
@@ -299,27 +286,35 @@ function goToNextItem(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  const syncedState = syncTimerState(input);
-  const nextIndex = syncedState.runtime.currentIndex + 1;
-  if (nextIndex >= syncedState.structure.items.length) {
-    return syncedState;
+  const synced = syncState(input);
+  const nextIndex = synced.runtime.currentIndex + 1;
+  if (nextIndex >= synced.structure.items.length) {
+    return synced;
   }
-  return moveToItem({ state: syncedState, itemIndex: nextIndex, nowEpochMs: input.nowEpochMs });
+  return moveToItem({
+    state: synced,
+    itemIndex: nextIndex,
+    nowEpochMs: input.nowEpochMs,
+  });
 }
 
 function goToPreviousItem(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSessionState {
-  const syncedState = syncTimerState(input);
-  const previousIndex = syncedState.runtime.currentIndex - 1;
+  const synced = syncState(input);
+  const previousIndex = synced.runtime.currentIndex - 1;
   if (previousIndex < 0) {
-    return syncedState;
+    return synced;
   }
-  return moveToItem({ state: syncedState, itemIndex: previousIndex, nowEpochMs: input.nowEpochMs });
+  return moveToItem({
+    state: synced,
+    itemIndex: previousIndex,
+    nowEpochMs: input.nowEpochMs,
+  });
 }
 
-function replaceTimerStructure(input: {
+function applyEditedStructure(input: {
   state: TimerSessionState;
   structure: TimerStructure;
 }): TimerSessionState {
@@ -328,8 +323,12 @@ function replaceTimerStructure(input: {
   }
 
   const structure = assertTimerStructure(cloneTimerStructure(input.structure));
-  const currentIndex = Math.min(input.state.runtime.currentIndex, structure.items.length - 1);
-  const currentDurationMs = structure.items[currentIndex]?.durationSec * 1000 ?? 0;
+  const currentIndex = Math.min(
+    input.state.runtime.currentIndex,
+    structure.items.length - 1,
+  );
+  const currentItem = structure.items[currentIndex];
+  const currentDurationMs = currentItem ? currentItem.durationSec * 1000 : 0;
 
   if (input.state.runtime.status === "paused") {
     return {
@@ -366,33 +365,44 @@ function replaceTimerStructure(input: {
   };
 }
 
-function createTimerSnapshot(input: {
+function loadPresetStructure(input: {
+  structure: TimerStructure;
+}): TimerSessionState {
+  const structure = assertTimerStructure(cloneTimerStructure(input.structure));
+
+  return {
+    structure,
+    runtime: createInitialTimerRuntime(),
+  };
+}
+
+function createSnapshot(input: {
   state: TimerSessionState;
   nowEpochMs: number;
 }): TimerSnapshot {
-  const syncedState = syncTimerState(input);
-  const item = currentItem(syncedState);
+  const synced = syncState(input);
+  const item = currentItem(synced);
 
   return {
-    title: syncedState.structure.name,
-    status: syncedState.runtime.status,
-    currentItemIndex: syncedState.runtime.currentIndex,
-    currentItemNumber: syncedState.runtime.currentIndex + 1,
-    totalItemCount: syncedState.structure.items.length,
+    title: synced.structure.name,
+    status: synced.runtime.status,
+    currentItemIndex: synced.runtime.currentIndex,
+    currentItemNumber: synced.runtime.currentIndex + 1,
+    totalItemCount: synced.structure.items.length,
     currentItemKind: item.kind,
-    currentItemLabel: buildCurrentItemLabel(
-      syncedState.structure,
-      syncedState.runtime.currentIndex,
+    currentItemLabel: buildDerivedItemName(
+      synced.structure,
+      synced.runtime.currentIndex,
     ),
-    remainingMs: computeRemainingMs(syncedState, input.nowEpochMs),
+    remainingMs: computeRemainingMs(synced, input.nowEpochMs),
     showBreakBanner: item.kind === "break",
     showCurrentBlinds: item.kind === "level",
     currentBlindGroups:
       item.kind === "level"
         ? createBlindGroupSnapshot(item.blindGroups)
         : createBlindGroupSnapshot(createDefaultBlindGroups()),
-    nextItemText: buildNextItemText(syncedState.structure, syncedState.runtime.currentIndex),
-    nextBreakRemainingMs: computeNextBreakRemainingMs(syncedState, input.nowEpochMs),
+    nextItemText: buildNextItemText(synced.structure, synced.runtime.currentIndex),
+    nextBreakRemainingMs: computeNextBreakRemainingMs(synced, input.nowEpochMs),
   };
 }
 
@@ -412,7 +422,7 @@ export class TimerUsecase {
   }
 
   getSnapshot(): TimerSnapshot {
-    return createTimerSnapshot({
+    return createSnapshot({
       state: this.deps.store.getState(),
       nowEpochMs: this.deps.clock.nowEpochMs(),
     });
@@ -426,6 +436,10 @@ export class TimerUsecase {
     return this.deps.store.getState().runtime.status;
   }
 
+  isEditable(): boolean {
+    return this.getStatus() !== "running";
+  }
+
   startAutoTick(intervalMs = 250): () => void {
     this.stopAutoTick();
     this.tickerTask = this.deps.scheduler.start(() => {
@@ -437,16 +451,15 @@ export class TimerUsecase {
       );
     }, intervalMs);
 
-    return () => {
-      this.stopAutoTick();
-    };
+    return () => this.stopAutoTick();
   }
 
   stopAutoTick(): void {
-    if (this.tickerTask) {
-      this.tickerTask.cancel();
-      this.tickerTask = null;
+    if (!this.tickerTask) {
+      return;
     }
+    this.tickerTask.cancel();
+    this.tickerTask = null;
   }
 
   toggle(): void {
@@ -481,11 +494,19 @@ export class TimerUsecase {
   }
 
   loadStructure(structure: TimerStructure): void {
+    this.applyEditedStructure(structure);
+  }
+
+  applyEditedStructure(structure: TimerStructure): void {
     this.deps.store.setState(
-      replaceTimerStructure({
+      applyEditedStructure({
         state: this.deps.store.getState(),
         structure,
       }),
     );
+  }
+
+  loadPresetStructure(structure: TimerStructure): void {
+    this.deps.store.setState(loadPresetStructure({ structure }));
   }
 }

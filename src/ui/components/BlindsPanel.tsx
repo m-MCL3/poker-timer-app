@@ -1,89 +1,58 @@
-import type { GameKindId } from "@/domain/models/blinds";
+import {
+  gameKindLabel,
+  labelsForGameKind,
+  type GameKindId,
+} from "@/domain/models/blinds";
 import type { SnapshotBlindGroup } from "@/usecases/timer/timerSnapshot";
 
 type Props = {
   blindGroups: SnapshotBlindGroup[];
 };
 
-function gameKindLabel(gameKind: GameKindId): string {
-  if (gameKind === "fl") {
-    return "FL";
-  }
-  if (gameKind === "stud") {
-    return "STUD";
-  }
-  return "NL / PL";
-}
-
-function slotLabels(gameKind: GameKindId): { sb: string; bb: string; ante: string } {
-  if (gameKind === "stud") {
-    return {
-      sb: "Bring-in",
-      bb: "Complete",
-      ante: "Ante",
-    };
-  }
-
-  return {
-    sb: "SB",
-    bb: "BB",
-    ante: "Ante",
-  };
-}
-
 export default function BlindsPanel(props: Props) {
   const items = Array.isArray(props.blindGroups) ? props.blindGroups : [];
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <section className="grid gap-4 lg:grid-cols-3">
       {items.map((group) => {
-        const labels = slotLabels(group.gameKind);
+        const labels = labelsForGameKind(group.gameKind as GameKindId);
         return (
-          <section
+          <div
             key={group.gameKind}
-            className="rounded-[1.5rem] border border-zinc-800 bg-zinc-950/60 px-5 py-4"
+            className="rounded-[2rem] border border-zinc-800 bg-zinc-950/60 p-5 shadow-xl backdrop-blur"
           >
-            <div className="text-xs font-semibold tracking-[0.3em] text-zinc-500">
+            <div className="text-xs tracking-[0.28em] text-zinc-500">
               {gameKindLabel(group.gameKind)}
             </div>
-
-            <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+            <div className="mt-4 grid grid-cols-3 gap-3">
               <div>
-                <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                  {labels.sb}
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-white">
+                <div className="text-xs text-zinc-500">{labels.sb}</div>
+                <div className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">
                   {group.blinds.sb}
                 </div>
               </div>
-
               <div>
-                <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                  {labels.bb}
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-white">
+                <div className="text-xs text-zinc-500">{labels.bb}</div>
+                <div className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">
                   {group.blinds.bb}
                 </div>
               </div>
-
               <div>
-                <div className="text-[11px] uppercase tracking-[0.25em] text-zinc-500">
-                  {labels.ante}
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-white">
+                <div className="text-xs text-zinc-500">{labels.ante}</div>
+                <div className="mt-1 text-xl font-semibold tabular-nums text-zinc-100">
                   {group.blinds.ante}
                 </div>
               </div>
             </div>
-          </section>
+          </div>
         );
       })}
 
-      {items.length === 0 && (
-        <div className="rounded-[1.5rem] border border-zinc-800 bg-zinc-950/60 px-5 py-4 text-sm text-zinc-400 md:col-span-3">
+      {items.length === 0 ? (
+        <div className="rounded-[2rem] border border-zinc-800 bg-zinc-950/60 p-5 text-zinc-400">
           ブラインド情報がありません。
         </div>
-      )}
-    </div>
+      ) : null}
+    </section>
   );
 }

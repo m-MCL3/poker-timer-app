@@ -26,28 +26,22 @@ export default function TimerBoard(props: Props) {
   return (
     <button
       type="button"
-      className="flex min-h-[340px] w-full flex-col items-center justify-center rounded-[2rem] border border-zinc-800 bg-zinc-950/60 px-6 py-8 text-center"
       onClick={props.onToggleRequested}
+      className="w-full rounded-[2rem] border border-zinc-800 bg-zinc-950/70 px-6 py-8 text-left shadow-2xl backdrop-blur"
     >
-      <div className="text-xs font-semibold tracking-[0.3em] text-zinc-500">
+      <div className="text-sm tracking-[0.25em] text-zinc-400">
         ITEM {props.currentItemNumber} / {props.totalItemCount}
       </div>
-
-      <div className="mt-5 text-3xl font-semibold tracking-[0.18em] text-white">
+      <div className="mt-3 text-3xl font-bold tracking-wide text-zinc-100">
         {props.currentItemLabel}
       </div>
-
-      <div className="mt-4 text-xs font-semibold tracking-[0.35em] text-slate-400">
+      <div className="mt-4 text-sm tracking-[0.3em] text-cyan-300">
         {statusLabel(props.status)}
       </div>
-
-      <div className="mt-6 font-mono text-7xl font-semibold tracking-[0.08em] text-white sm:text-8xl">
+      <div className="mt-2 text-7xl font-black tabular-nums tracking-tight text-white sm:text-8xl">
         {props.remainingText}
       </div>
-
-      <div className="mt-6 text-xs tracking-[0.22em] text-zinc-500">
-        画面タップでスタート / 一時停止
-      </div>
+      <div className="mt-4 text-sm text-zinc-400">画面タップでスタート / 一時停止</div>
     </button>
   );
 }

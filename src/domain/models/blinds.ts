@@ -12,7 +12,7 @@ export type BlindGroup = {
   values: BlindValues;
 };
 
-export const GAME_KIND_ORDER: readonly GameKindId[] = ["fl", "stud", "nlpl"];
+export const GAME_KIND_ORDER: GameKindId[] = ["fl", "stud", "nlpl"];
 
 export function createEmptyBlindValues(): BlindValues {
   return {
@@ -30,11 +30,7 @@ export function createDefaultBlindGroups(): BlindGroup[] {
 }
 
 export function cloneBlindValues(values: BlindValues): BlindValues {
-  return {
-    sb: values.sb,
-    bb: values.bb,
-    ante: values.ante,
-  };
+  return { ...values };
 }
 
 export function cloneBlindGroups(groups: BlindGroup[]): BlindGroup[] {
@@ -51,7 +47,29 @@ export function findBlindGroup(
   return groups.find((group) => group.gameKind === gameKind);
 }
 
-export function ensureBlindGroups(groups: BlindGroup[]): BlindGroup[] {
+export function upsertBlindValue(
+  groups: BlindGroup[],
+  gameKind: GameKindId,
+  slot: BlindSlotId,
+  value: number | null,
+): BlindGroup[] {
+  const next = cloneBlindGroups(groups);
+  const target = findBlindGroup(next, gameKind);
+  if (target) {
+    target.values[slot] = value;
+    return next;
+  }
+  next.push({
+    gameKind,
+    values: {
+      ...createEmptyBlindValues(),
+      [slot]: value,
+    },
+  });
+  return normalizeBlindGroups(next);
+}
+
+export function normalizeBlindGroups(groups: BlindGroup[]): BlindGroup[] {
   return GAME_KIND_ORDER.map((gameKind) => {
     const existing = findBlindGroup(groups, gameKind);
     return {
@@ -66,4 +84,34 @@ export function formatBlindValue(value: number | null): string {
     return "-";
   }
   return String(value);
+}
+
+export function labelsForGameKind(gameKind: GameKindId): {
+  sb: string;
+  bb: string;
+  ante: string;
+} {
+  if (gameKind === "stud") {
+    return {
+      sb: "Bring-in",
+      bb: "Complete",
+      ante: "Ante",
+    };
+  }
+
+  return {
+    sb: "SB",
+    bb: "BB",
+    ante: "Ante",
+  };
+}
+
+export function gameKindLabel(gameKind: GameKindId): string {
+  if (gameKind === "fl") {
+    return "FL";
+  }
+  if (gameKind === "stud") {
+    return "STUD";
+  }
+  return "NL / PL";
 }

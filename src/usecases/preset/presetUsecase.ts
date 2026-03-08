@@ -1,50 +1,59 @@
-import type { StructurePresetSummary } from "@/domain/models/preset";
+import type { PresetSummary } from "@/domain/models/preset";
 import { sortPresetSummaries } from "@/domain/models/preset";
 import type { TimerStructure } from "@/domain/models/timerStructure";
-import type { TimerStructurePresetRepository } from "@/usecases/ports/timerStructurePresetRepository";
-
-export function normalizePresetName(name: string): string {
-  return name.trim();
-}
-
-export function validatePresetName(name: string): string | null {
-  if (!name.trim()) {
-    return "プリセット名を入力してください。";
-  }
-  return null;
-}
-
-export function hasPreset(
-  presets: StructurePresetSummary[],
-  name: string,
-): boolean {
-  const normalized = normalizePresetName(name);
-  return presets.some((preset) => preset.name === normalized);
-}
+import type { PresetRepository } from "@/usecases/ports/presetRepository";
 
 export class PresetUsecase {
-  constructor(private readonly repository: TimerStructurePresetRepository) {}
+  constructor(private readonly repository: PresetRepository) {}
 
-  async listSummaries(): Promise<StructurePresetSummary[]> {
-    return sortPresetSummaries(await this.repository.listPresets());
+  normalizeName(name: string): string {
+    return name.trim();
+  }
+
+  validateName(name: string): string | null {
+    if (!this.normalizeName(name)) {
+      return "プリセット名を入力してください。";
+    }
+    return null;
+  }
+
+  hasPreset(presets: PresetSummary[], name: string): boolean {
+    const normalized = this.normalizeName(name);
+    return presets.some((preset) => preset.name === normalized);
+  }
+
+  formatList(presets: PresetSummary[]): PresetSummary[] {
+    return sortPresetSummaries(presets);
+  }
+
+  async listPresets(): Promise<PresetSummary[]> {
+    return this.formatList(await this.repository.listPresets());
   }
 
   async savePreset(name: string, structure: TimerStructure): Promise<void> {
-    await this.repository.savePreset(normalizePresetName(name), structure);
+    await this.repository.savePreset(this.normalizeName(name), structure);
   }
 
   async loadPreset(name: string): Promise<TimerStructure | null> {
-    return this.repository.loadPreset(normalizePresetName(name));
+    return this.repository.loadPreset(this.normalizeName(name));
   }
 
   async renamePreset(currentName: string, nextName: string): Promise<void> {
-    await this.repository.renamePreset(
-      normalizePresetName(currentName),
-      normalizePresetName(nextName),
-    );
+    const current = this.normalizeName(currentName);
+    const next = this.normalizeName(nextName);
+
+    const validationError = this.validateName(next);
+    if (validationError) {
+      throw new Error(validationError);
+    }
+    if (current === next) {
+      return;
+    }
+
+    await this.repository.renamePreset(current, next);
   }
 
   async deletePreset(name: string): Promise<void> {
-    await this.repository.deletePreset(normalizePresetName(name));
+    await this.repository.deletePreset(this.normalizeName(name));
   }
 }

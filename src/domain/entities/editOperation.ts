@@ -1,0 +1,1 @@
+export type { EditOperation } from "@/domain/models/editor";

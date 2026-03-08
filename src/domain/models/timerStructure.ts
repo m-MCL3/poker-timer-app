@@ -1,13 +1,14 @@
 import {
   cloneBlindGroups,
   createDefaultBlindGroups,
-  ensureBlindGroups,
+  normalizeBlindGroups,
   type BlindGroup,
 } from "@/domain/models/blinds";
 
 export type LevelItem = {
   id: string;
   kind: "level";
+  name: string;
   durationSec: number;
   blindGroups: BlindGroup[];
 };
@@ -15,6 +16,7 @@ export type LevelItem = {
 export type BreakItem = {
   id: string;
   kind: "break";
+  name: string;
   durationSec: number;
 };
 
@@ -27,6 +29,29 @@ export type TimerStructure = {
   defaultLevelDurationSec: number;
   defaultBreakDurationSec: number;
 };
+
+function createId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createLevelItem(input?: Partial<LevelItem>): LevelItem {
+  return {
+    id: input?.id ?? createId("lv"),
+    kind: "level",
+    name: input?.name ?? "",
+    durationSec: input?.durationSec ?? 20 * 60,
+    blindGroups: normalizeBlindGroups(input?.blindGroups ?? createDefaultBlindGroups()),
+  };
+}
+
+export function createBreakItem(input?: Partial<BreakItem>): BreakItem {
+  return {
+    id: input?.id ?? createId("br"),
+    kind: "break",
+    name: input?.name ?? "",
+    durationSec: input?.durationSec ?? 10 * 60,
+  };
+}
 
 export function cloneTimerItem(item: TimerItem): TimerItem {
   if (item.kind === "break") {
@@ -41,8 +66,11 @@ export function cloneTimerItem(item: TimerItem): TimerItem {
 
 export function cloneTimerStructure(structure: TimerStructure): TimerStructure {
   return {
-    ...structure,
+    id: structure.id,
+    name: structure.name,
     items: structure.items.map(cloneTimerItem),
+    defaultLevelDurationSec: structure.defaultLevelDurationSec,
+    defaultBreakDurationSec: structure.defaultBreakDurationSec,
   };
 }
 
@@ -54,26 +82,29 @@ export function assertTimerStructure(structure: TimerStructure): TimerStructure 
   return structure;
 }
 
-export function createLevelItem(input: {
-  id: string;
-  durationSec: number;
-  blindGroups?: BlindGroup[];
-}): LevelItem {
-  return {
-    id: input.id,
-    kind: "level",
-    durationSec: Math.max(0, Math.floor(input.durationSec)),
-    blindGroups: ensureBlindGroups(input.blindGroups ?? createDefaultBlindGroups()),
-  };
+export function countLevelsUpToIndex(
+  structure: TimerStructure,
+  itemIndex: number,
+): number {
+  let count = 0;
+  for (let index = 0; index <= itemIndex; index += 1) {
+    if (structure.items[index]?.kind === "level") {
+      count += 1;
+    }
+  }
+  return Math.max(count, 1);
 }
 
-export function createBreakItem(input: {
-  id: string;
-  durationSec: number;
-}): BreakItem {
-  return {
-    id: input.id,
-    kind: "break",
-    durationSec: Math.max(0, Math.floor(input.durationSec)),
-  };
+export function buildDerivedItemName(
+  structure: TimerStructure,
+  itemIndex: number,
+): string {
+  const item = structure.items[itemIndex];
+  if (!item) {
+    return "";
+  }
+  if (item.kind === "break") {
+    return "BREAK";
+  }
+  return `LEVEL ${countLevelsUpToIndex(structure, itemIndex)}`;
 }

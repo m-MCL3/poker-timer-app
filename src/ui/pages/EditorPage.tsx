@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useContainer } from "@/app/composition/containerContext";
 import {
   GAME_KIND_ORDER,
   type BlindSlotId,
   type GameKindId,
 } from "@/domain/models/blinds";
-import type { StructurePresetSummary } from "@/domain/models/preset";
-import type { EditOperation } from "@/domain/models/editorState";
-import { normalizePresetName, validatePresetName } from "@/usecases/preset/presetUsecase";
+import type { EditorState, EditOperation } from "@/domain/models/editor";
+import type { PresetSummary } from "@/domain/models/preset";
+import { useContainer } from "@/app/composition/containerContext";
 import "./editor-table.css";
 
 function parseBlindValue(value: string): number | null {
@@ -16,16 +15,11 @@ function parseBlindValue(value: string): number | null {
   if (trimmed === "") {
     return null;
   }
-
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function hasPreset(presets: StructurePresetSummary[], name: string): boolean {
-  return presets.some((preset) => preset.name === name);
-}
-
-function formatPresetLabel(preset: StructurePresetSummary): string {
+function formatPresetLabel(preset: PresetSummary): string {
   if (preset.updatedAtEpochMs <= 0) {
     return preset.name;
   }
@@ -42,40 +36,41 @@ function formatPresetLabel(preset: StructurePresetSummary): string {
 
 export default function EditorPage() {
   const navigate = useNavigate();
-  const { timerUsecase, editorUsecase, presetUsecase } = useContainer();
+  const { editorUsecase, presetUsecase, timerUsecase } = useContainer();
 
-  const [presets, setPresets] = useState<StructurePresetSummary[]>([]);
+  const [editorState, setEditorState] = useState<EditorState>(() =>
+    editorUsecase.createState({
+      structure: timerUsecase.getStructure(),
+      isEditable: timerUsecase.isEditable(),
+    }),
+  );
+  const [presets, setPresets] = useState<PresetSummary[]>([]);
   const [saveName, setSaveName] = useState("");
   const [loadName, setLoadName] = useState("");
-  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
-    editorUsecase.replaceBaseStructure(timerUsecase.getStructure());
-    editorUsecase.syncEditable(timerUsecase.getStatus() !== "running");
-
-    const unsubscribeEditor = editorUsecase.subscribe(() => {
-      setRevision((prev) => prev + 1);
+    return timerUsecase.subscribe(() => {
+      setEditorState((prev) =>
+        editorUsecase.setEditable({
+          state: prev,
+          isEditable: timerUsecase.isEditable(),
+        }),
+      );
     });
-
-    const unsubscribeTimer = timerUsecase.subscribe(() => {
-      editorUsecase.syncEditable(timerUsecase.getStatus() !== "running");
-    });
-
-    return () => {
-      unsubscribeTimer();
-      unsubscribeEditor();
-    };
   }, [editorUsecase, timerUsecase]);
 
-  const snapshot = useMemo(() => editorUsecase.getSnapshot(), [editorUsecase, revision]);
+  const snapshot = useMemo(
+    () => editorUsecase.createSnapshot(editorState),
+    [editorState, editorUsecase],
+  );
 
   async function refreshPresets(): Promise<void> {
-    setPresets(await presetUsecase.listSummaries());
+    setPresets(await presetUsecase.listPresets());
   }
 
   useEffect(() => {
     void refreshPresets();
-  }, [presetUsecase]);
+  }, []);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -91,7 +86,12 @@ export default function EditorPage() {
   }, [snapshot.isDirty]);
 
   function pushOperation(operation: EditOperation): void {
-    editorUsecase.applyOperation(operation);
+    setEditorState((prev) =>
+      editorUsecase.appendOperation({
+        state: prev,
+        operation,
+      }),
+    );
   }
 
   function backWithGuard(): void {
@@ -107,7 +107,7 @@ export default function EditorPage() {
       return;
     }
 
-    editorUsecase.cancel();
+    setEditorState((prev) => editorUsecase.resetChanges(prev));
     navigate("/");
   }
 
@@ -117,9 +117,14 @@ export default function EditorPage() {
     }
 
     try {
-      const nextStructure = editorUsecase.materialize();
-      timerUsecase.loadStructure(nextStructure);
-      editorUsecase.replaceBaseStructure(timerUsecase.getStructure());
+      const structure = editorUsecase.materializeStructure(editorState);
+      timerUsecase.applyEditedStructure(structure);
+      setEditorState((prev) =>
+        editorUsecase.replaceBaseStructure({
+          state: prev,
+          structure,
+        }),
+      );
       navigate("/");
     } catch (error) {
       alert(error instanceof Error ? error.message : "Apply failed.");
@@ -131,14 +136,14 @@ export default function EditorPage() {
       return;
     }
 
-    const normalizedName = normalizePresetName(saveName);
-    const validationError = validatePresetName(normalizedName);
+    const normalizedName = presetUsecase.normalizeName(saveName);
+    const validationError = presetUsecase.validateName(normalizedName);
     if (validationError) {
       alert(validationError);
       return;
     }
 
-    if (hasPreset(presets, normalizedName)) {
+    if (presetUsecase.hasPreset(presets, normalizedName)) {
       const isAccepted = confirm(
         `プリセット「${normalizedName}」は既に存在します。上書きしますか？`,
       );
@@ -147,7 +152,10 @@ export default function EditorPage() {
       }
     }
 
-    await presetUsecase.savePreset(normalizedName, editorUsecase.materialize());
+    await presetUsecase.savePreset(
+      normalizedName,
+      editorUsecase.materializeStructure(editorState),
+    );
     setSaveName("");
     setLoadName(normalizedName);
     await refreshPresets();
@@ -158,7 +166,7 @@ export default function EditorPage() {
       return;
     }
 
-    const normalizedName = normalizePresetName(loadName);
+    const normalizedName = presetUsecase.normalizeName(loadName);
     if (!normalizedName) {
       alert("読み込むプリセットを選択してください。");
       return;
@@ -180,8 +188,13 @@ export default function EditorPage() {
     }
 
     try {
-      timerUsecase.loadStructure(loaded);
-      editorUsecase.replaceBaseStructure(timerUsecase.getStructure());
+      timerUsecase.loadPresetStructure(loaded);
+      setEditorState((prev) =>
+        editorUsecase.replaceBaseStructure({
+          state: prev,
+          structure: loaded,
+        }),
+      );
     } catch (error) {
       alert(error instanceof Error ? error.message : "プリセットの適用に失敗しました。");
     }
@@ -192,7 +205,7 @@ export default function EditorPage() {
       return;
     }
 
-    const currentName = normalizePresetName(loadName);
+    const currentName = presetUsecase.normalizeName(loadName);
     if (!currentName) {
       alert("リネームするプリセットを選択してください。");
       return;
@@ -206,18 +219,16 @@ export default function EditorPage() {
       return;
     }
 
-    const nextName = normalizePresetName(inputName);
-    const validationError = validatePresetName(nextName);
+    const nextName = presetUsecase.normalizeName(inputName);
+    const validationError = presetUsecase.validateName(nextName);
     if (validationError) {
       alert(validationError);
       return;
     }
-
     if (nextName === currentName) {
       return;
     }
-
-    if (hasPreset(presets, nextName)) {
+    if (presetUsecase.hasPreset(presets, nextName)) {
       alert(`プリセット「${nextName}」は既に存在します。`);
       return;
     }
@@ -232,7 +243,7 @@ export default function EditorPage() {
       return;
     }
 
-    const normalizedName = normalizePresetName(loadName);
+    const normalizedName = presetUsecase.normalizeName(loadName);
     if (!normalizedName) {
       alert("削除するプリセットを選択してください。");
       return;
@@ -251,257 +262,287 @@ export default function EditorPage() {
   }
 
   return (
-    <div className="editor-page">
-      <div className="editor-header">
-        <div>
-          <h1>Edit Structure</h1>
-          <p>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#1f2937_0%,#09090b_55%,#000000_100%)] px-4 py-6 text-white sm:px-6">
+      <div className="mx-auto max-w-7xl">
+        <header className="mb-6">
+          <h1 className="text-3xl font-bold">Edit Structure</h1>
+          <p className="mt-3 text-sm text-zinc-400">
             各行の「＋L」で下にLevel挿入、「＋B」で下にBreak挿入、
             「－」で行削除。TypeでLevel/Break切替。
           </p>
-          {snapshot.isEditable ? null : (
-            <p className="editor-readonly-message">running中は参照のみです。</p>
-          )}
-        </div>
+          {!snapshot.isEditable ? (
+            <p className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              running中は参照のみです。
+            </p>
+          ) : null}
+        </header>
 
-        <button type="button" onClick={backWithGuard}>
+        <button
+          type="button"
+          className="mb-6 rounded-xl border border-zinc-700 px-4 py-2 hover:bg-zinc-900/60"
+          onClick={backWithGuard}
+        >
           ← Back
         </button>
-      </div>
 
-      <section className="editor-save-load">
-        <h2>Presets</h2>
+        <section className="mb-6 rounded-[2rem] border border-zinc-800 bg-zinc-950/60 p-5 shadow-xl">
+          <h2 className="text-xl font-semibold">Presets</h2>
 
-        <div className="editor-save-load-row">
-          <input
-            value={saveName}
-            onChange={(event) => setSaveName(event.target.value)}
-            disabled={!snapshot.isEditable}
-            placeholder="プリセット名"
-          />
-          <button
-            type="button"
-            onClick={() => void onSavePreset()}
-            disabled={!snapshot.isEditable}
-          >
-            Save Preset
-          </button>
+          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <input
+                value={saveName}
+                onChange={(event) => setSaveName(event.target.value)}
+                disabled={!snapshot.isEditable}
+                placeholder="プリセット名"
+                className="rounded-xl border border-zinc-700 bg-zinc-900/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+              />
+              <button
+                type="button"
+                onClick={() => void onSavePreset()}
+                disabled={!snapshot.isEditable}
+                className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-3 text-sm font-medium text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Save Preset
+              </button>
+            </div>
 
-          <select
-            value={loadName}
-            onChange={(event) => setLoadName(event.target.value)}
-            disabled={!snapshot.isEditable}
-          >
-            <option value="">（プリセットを選択）</option>
-            {presets.map((preset) => (
-              <option key={preset.name} value={preset.name}>
-                {formatPresetLabel(preset)}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={() => void onLoadPreset()}
-            disabled={!snapshot.isEditable}
-          >
-            Load Preset
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void onRenamePreset()}
-            disabled={!snapshot.isEditable}
-          >
-            Rename Preset
-          </button>
-
-          <button
-            type="button"
-            onClick={() => void onDeletePreset()}
-            disabled={!snapshot.isEditable}
-          >
-            Delete Preset
-          </button>
-        </div>
-      </section>
-
-      <section className="editor-table-section">
-        <table className="editor-table">
-          <thead>
-            <tr>
-              <th>Actions</th>
-              <th>Item</th>
-              <th>Type</th>
-              <th>Min</th>
-              {GAME_KIND_ORDER.map((gameKind) => (
-                <th key={gameKind}>{gameKind.toUpperCase()} (SB / BB / Ante)</th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {snapshot.rows.map((row) => (
-              <tr key={row.itemId}>
-                <td className="editor-actions-cell">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      pushOperation({
-                        type: "insert-level-after",
-                        itemIndex: row.itemIndex,
-                      })
-                    }
-                    disabled={!snapshot.isEditable}
-                    title="下にLevel挿入"
-                  >
-                    ＋L
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      pushOperation({
-                        type: "insert-break-after",
-                        itemIndex: row.itemIndex,
-                      })
-                    }
-                    disabled={!snapshot.isEditable}
-                    title="下にBreak挿入"
-                  >
-                    ＋B
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      pushOperation({
-                        type: "remove-item",
-                        itemIndex: row.itemIndex,
-                      })
-                    }
-                    disabled={!snapshot.isEditable || !row.canRemove}
-                    title="この行を削除"
-                  >
-                    －
-                  </button>
-                </td>
-
-                <td>
-                  ITEM {row.itemNumber}
-                  <div>{row.itemLabel}</div>
-                </td>
-
-                <td>
-                  <select
-                    value={row.itemKind}
-                    onChange={(event) =>
-                      pushOperation({
-                        type: "change-item-kind",
-                        itemIndex: row.itemIndex,
-                        kind: event.target.value as "level" | "break",
-                      })
-                    }
-                    disabled={!snapshot.isEditable}
-                  >
-                    <option value="level">Level</option>
-                    <option value="break">Break</option>
-                  </select>
-                </td>
-
-                <td>
-                  <input
-                    value={row.durationMinutesText}
-                    onChange={(event) =>
-                      pushOperation({
-                        type: "set-duration-minutes",
-                        itemIndex: row.itemIndex,
-                        minutes: Number(event.target.value),
-                      })
-                    }
-                    disabled={!snapshot.isEditable}
-                    inputMode="numeric"
-                  />
-                </td>
-
-                {row.blindCells.map((cell) => (
-                  <td key={cell.gameKind}>
-                    {row.canEditBlinds ? (
-                      <div className="editor-blind-inputs">
-                        <input
-                          value={cell.sb}
-                          onChange={(event) =>
-                            pushOperation({
-                              type: "set-blind-value",
-                              itemIndex: row.itemIndex,
-                              gameKind: cell.gameKind as GameKindId,
-                              slot: "sb" as BlindSlotId,
-                              value: parseBlindValue(event.target.value),
-                            })
-                          }
-                          disabled={!snapshot.isEditable}
-                          inputMode="numeric"
-                          placeholder="SB"
-                        />
-                        <input
-                          value={cell.bb}
-                          onChange={(event) =>
-                            pushOperation({
-                              type: "set-blind-value",
-                              itemIndex: row.itemIndex,
-                              gameKind: cell.gameKind as GameKindId,
-                              slot: "bb" as BlindSlotId,
-                              value: parseBlindValue(event.target.value),
-                            })
-                          }
-                          disabled={!snapshot.isEditable}
-                          inputMode="numeric"
-                          placeholder="BB"
-                        />
-                        <input
-                          value={cell.ante}
-                          onChange={(event) =>
-                            pushOperation({
-                              type: "set-blind-value",
-                              itemIndex: row.itemIndex,
-                              gameKind: cell.gameKind as GameKindId,
-                              slot: "ante" as BlindSlotId,
-                              value: parseBlindValue(event.target.value),
-                            })
-                          }
-                          disabled={!snapshot.isEditable}
-                          inputMode="numeric"
-                          placeholder="Ante"
-                        />
-                      </div>
-                    ) : (
-                      <span className="editor-break-cell">-</span>
-                    )}
-                  </td>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+              <select
+                value={loadName}
+                onChange={(event) => setLoadName(event.target.value)}
+                disabled={!snapshot.isEditable}
+                className="rounded-xl border border-zinc-700 bg-zinc-900/80 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
+              >
+                <option value="">（プリセットを選択）</option>
+                {presets.map((preset) => (
+                  <option key={preset.name} value={preset.name}>
+                    {formatPresetLabel(preset)}
+                  </option>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+              </select>
+              <button
+                type="button"
+                onClick={() => void onLoadPreset()}
+                disabled={!snapshot.isEditable}
+                className="rounded-xl border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Load Preset
+              </button>
+              <button
+                type="button"
+                onClick={() => void onRenamePreset()}
+                disabled={!snapshot.isEditable}
+                className="rounded-xl border border-zinc-700 px-4 py-3 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Rename Preset
+              </button>
+              <button
+                type="button"
+                onClick={() => void onDeletePreset()}
+                disabled={!snapshot.isEditable}
+                className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-100 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Delete Preset
+              </button>
+            </div>
+          </div>
+        </section>
 
-      <div className="editor-footer">
-        <button
-          type="button"
-          onClick={() => editorUsecase.cancel()}
-          disabled={!snapshot.isDirty}
-        >
-          Cancel
-        </button>
+        <section className="overflow-hidden rounded-[2rem] border border-zinc-800 bg-zinc-950/60 shadow-xl">
+          <div className="overflow-x-auto">
+            <table className="editor-table w-full min-w-[1200px] border-collapse">
+              <thead>
+                <tr className="bg-zinc-900/70 text-left text-xs tracking-[0.24em] text-zinc-400">
+                  <th className="px-4 py-4">Actions</th>
+                  <th className="px-4 py-4">Item</th>
+                  <th className="px-4 py-4">Type</th>
+                  <th className="px-4 py-4">Min</th>
+                  {GAME_KIND_ORDER.map((gameKind) => (
+                    <th key={gameKind} className="px-4 py-4">
+                      {gameKind.toUpperCase()} (SB / BB / Ante)
+                    </th>
+                  ))}
+                </tr>
+              </thead>
 
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={!snapshot.isEditable || !snapshot.isDirty}
-        >
-          Apply
-        </button>
+              <tbody>
+                {snapshot.rows.map((row) => (
+                  <tr key={row.itemId} className="border-t border-zinc-800/80 align-top">
+                    <td className="px-4 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            pushOperation({
+                              type: "insert-level-after",
+                              itemIndex: row.itemIndex,
+                            })
+                          }
+                          disabled={!snapshot.isEditable}
+                          title="下にLevel挿入"
+                          className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          ＋L
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            pushOperation({
+                              type: "insert-break-after",
+                              itemIndex: row.itemIndex,
+                            })
+                          }
+                          disabled={!snapshot.isEditable}
+                          title="下にBreak挿入"
+                          className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          ＋B
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            pushOperation({
+                              type: "remove-item",
+                              itemIndex: row.itemIndex,
+                            })
+                          }
+                          disabled={!snapshot.isEditable || !row.canRemove}
+                          title="この行を削除"
+                          className="rounded-lg border border-zinc-700 px-3 py-2 text-sm hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          －
+                        </button>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <div className="text-xs tracking-[0.28em] text-zinc-500">
+                        ITEM {row.itemNumber}
+                      </div>
+                      <div className="mt-2 text-sm font-semibold text-zinc-100">
+                        {row.itemLabel}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <select
+                        value={row.itemKind}
+                        onChange={(event) =>
+                          pushOperation({
+                            type: "change-item-kind",
+                            itemIndex: row.itemIndex,
+                            kind: event.target.value as "level" | "break",
+                          })
+                        }
+                        disabled={!snapshot.isEditable}
+                        className="w-full rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm"
+                      >
+                        <option value="level">Level</option>
+                        <option value="break">Break</option>
+                      </select>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <input
+                        value={row.durationMinutesText}
+                        onChange={(event) =>
+                          pushOperation({
+                            type: "set-duration-minutes",
+                            itemIndex: row.itemIndex,
+                            minutes: Number(event.target.value),
+                          })
+                        }
+                        disabled={!snapshot.isEditable}
+                        inputMode="numeric"
+                        className="w-24 rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm"
+                      />
+                    </td>
+
+                    {row.blindCells.map((cell) => (
+                      <td key={`${row.itemId}-${cell.gameKind}`} className="px-4 py-4">
+                        {row.canEditBlinds ? (
+                          <div className="grid grid-cols-3 gap-2">
+                            <input
+                              value={cell.sb}
+                              onChange={(event) =>
+                                pushOperation({
+                                  type: "set-blind-value",
+                                  itemIndex: row.itemIndex,
+                                  gameKind: cell.gameKind as GameKindId,
+                                  slot: "sb" as BlindSlotId,
+                                  value: parseBlindValue(event.target.value),
+                                })
+                              }
+                              disabled={!snapshot.isEditable}
+                              inputMode="numeric"
+                              placeholder="SB"
+                              className="rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={cell.bb}
+                              onChange={(event) =>
+                                pushOperation({
+                                  type: "set-blind-value",
+                                  itemIndex: row.itemIndex,
+                                  gameKind: cell.gameKind as GameKindId,
+                                  slot: "bb" as BlindSlotId,
+                                  value: parseBlindValue(event.target.value),
+                                })
+                              }
+                              disabled={!snapshot.isEditable}
+                              inputMode="numeric"
+                              placeholder="BB"
+                              className="rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm"
+                            />
+                            <input
+                              value={cell.ante}
+                              onChange={(event) =>
+                                pushOperation({
+                                  type: "set-blind-value",
+                                  itemIndex: row.itemIndex,
+                                  gameKind: cell.gameKind as GameKindId,
+                                  slot: "ante" as BlindSlotId,
+                                  value: parseBlindValue(event.target.value),
+                                })
+                              }
+                              disabled={!snapshot.isEditable}
+                              inputMode="numeric"
+                              placeholder="Ante"
+                              className="rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm"
+                            />
+                          </div>
+                        ) : (
+                          <div className="text-zinc-500">-</div>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 border-t border-zinc-800 px-5 py-4">
+            <button
+              type="button"
+              onClick={() => setEditorState((prev) => editorUsecase.resetChanges(prev))}
+              disabled={!snapshot.isDirty}
+              className="rounded-xl border border-zinc-700 px-4 py-2 hover:bg-zinc-900/60 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onApply}
+              disabled={!snapshot.isEditable}
+              className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-5 py-2 font-medium text-cyan-100 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Apply
+            </button>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

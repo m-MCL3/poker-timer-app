@@ -1,9 +1,9 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type PropsWithChildren } from "react";
 import { createContainer, type AppContainer } from "@/app/composition/container";
 
 const ContainerContext = createContext<AppContainer | null>(null);
 
-export function ContainerProvider(props: { children: ReactNode }) {
+export function ContainerProvider(props: PropsWithChildren) {
   const container = useMemo(() => createContainer(), []);
   return (
     <ContainerContext.Provider value={container}>
@@ -13,9 +13,9 @@ export function ContainerProvider(props: { children: ReactNode }) {
 }
 
 export function useContainer(): AppContainer {
-  const container = useContext(ContainerContext);
-  if (!container) {
+  const value = useContext(ContainerContext);
+  if (!value) {
     throw new Error("ContainerProvider is missing.");
   }
-  return container;
+  return value;
 }

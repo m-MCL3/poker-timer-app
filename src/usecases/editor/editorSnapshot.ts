@@ -1,6 +1,6 @@
 import type { GameKindId } from "@/domain/models/blinds";
 
-export type EditorBlindCellSnapshot = {
+export type EditorRowBlindCell = {
   gameKind: GameKindId;
   sb: string;
   bb: string;
@@ -14,7 +14,7 @@ export type EditorRowSnapshot = {
   itemKind: "level" | "break";
   itemLabel: string;
   durationMinutesText: string;
-  blindCells: EditorBlindCellSnapshot[];
+  blindCells: EditorRowBlindCell[];
   canRemove: boolean;
   canEditBlinds: boolean;
 };

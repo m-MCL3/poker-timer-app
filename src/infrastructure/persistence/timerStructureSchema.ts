@@ -1,128 +1,132 @@
 import {
-  ensureBlindGroups,
+  normalizeBlindGroups,
   type BlindGroup,
-  type GameKindId,
 } from "@/domain/models/blinds";
 import {
   assertTimerStructure,
+  cloneTimerStructure,
   createBreakItem,
   createLevelItem,
   type TimerItem,
   type TimerStructure,
 } from "@/domain/models/timerStructure";
 
-function isGameKindId(value: string): value is GameKindId {
-  return value === "fl" || value === "stud" || value === "nlpl";
-}
+type StoredBlindGroup = {
+  gameKind: "fl" | "stud" | "nlpl";
+  values: {
+    sb: number | null;
+    bb: number | null;
+    ante: number | null;
+  };
+};
 
-function deserializeBlindGroups(rawGroups: unknown): BlindGroup[] {
-  if (!Array.isArray(rawGroups)) {
-    return ensureBlindGroups([]);
-  }
-
-  const parsed = rawGroups.flatMap((rawGroup) => {
-    if (typeof rawGroup !== "object" || rawGroup === null) {
-      return [];
+type StoredTimerItem =
+  | {
+      id: string;
+      kind: "level";
+      name: string;
+      durationSec: number;
+      blindGroups: StoredBlindGroup[];
     }
-
-    const group = rawGroup as {
-      gameKind?: string;
-      values?: { sb?: unknown; bb?: unknown; ante?: unknown };
+  | {
+      id: string;
+      kind: "break";
+      name: string;
+      durationSec: number;
     };
 
-    if (!group.gameKind || !isGameKindId(group.gameKind)) {
-      return [];
-    }
-
-    return [
-      {
-        gameKind: group.gameKind,
-        values: {
-          sb: typeof group.values?.sb === "number" ? group.values.sb : null,
-          bb: typeof group.values?.bb === "number" ? group.values.bb : null,
-          ante: typeof group.values?.ante === "number" ? group.values.ante : null,
-        },
-      },
-    ];
-  });
-
-  return ensureBlindGroups(parsed);
-}
-
-function deserializeItem(rawItem: unknown): TimerItem | null {
-  if (typeof rawItem !== "object" || rawItem === null) {
-    return null;
-  }
-
-  const item = rawItem as {
-    id?: unknown;
-    kind?: unknown;
-    durationSec?: unknown;
-    blindGroups?: unknown;
+type StoredTimerStructureV1 = {
+  schemaVersion: 1;
+  structure: {
+    id: string;
+    name: string;
+    items: StoredTimerItem[];
+    defaultLevelDurationSec: number;
+    defaultBreakDurationSec: number;
   };
+};
 
-  if (typeof item.id !== "string") {
-    return null;
-  }
-
-  const durationSec = typeof item.durationSec === "number" ? item.durationSec : 0;
-
+function toStoredItem(item: TimerItem): StoredTimerItem {
   if (item.kind === "break") {
-    return createBreakItem({ id: item.id, durationSec });
-  }
-
-  if (item.kind === "level") {
-    return createLevelItem({
+    return {
       id: item.id,
-      durationSec,
-      blindGroups: deserializeBlindGroups(item.blindGroups),
-    });
+      kind: "break",
+      name: item.name,
+      durationSec: item.durationSec,
+    };
   }
 
-  return null;
+  return {
+    id: item.id,
+    kind: "level",
+    name: item.name,
+    durationSec: item.durationSec,
+    blindGroups: item.blindGroups.map((group) => ({
+      gameKind: group.gameKind,
+      values: { ...group.values },
+    })),
+  };
 }
 
 export function serializeTimerStructure(structure: TimerStructure): string {
-  return JSON.stringify(structure);
+  const safe = cloneTimerStructure(assertTimerStructure(structure));
+  const stored: StoredTimerStructureV1 = {
+    schemaVersion: 1,
+    structure: {
+      id: safe.id,
+      name: safe.name,
+      items: safe.items.map(toStoredItem),
+      defaultLevelDurationSec: safe.defaultLevelDurationSec,
+      defaultBreakDurationSec: safe.defaultBreakDurationSec,
+    },
+  };
+  return JSON.stringify(stored);
+}
+
+function normalizeBlindGroupsForLevel(
+  groups: StoredBlindGroup[] | undefined,
+): BlindGroup[] {
+  return normalizeBlindGroups(
+    Array.isArray(groups)
+      ? groups.map((group) => ({
+          gameKind: group.gameKind,
+          values: {
+            sb: group.values?.sb ?? null,
+            bb: group.values?.bb ?? null,
+            ante: group.values?.ante ?? null,
+          },
+        }))
+      : [],
+  );
 }
 
 export function deserializeTimerStructure(raw: string): TimerStructure {
-  const parsed = JSON.parse(raw) as {
-    id?: unknown;
-    name?: unknown;
-    title?: unknown;
-    items?: unknown;
-    defaultLevelDurationSec?: unknown;
-    defaultBreakDurationSec?: unknown;
-    defaultLevelDurationMs?: unknown;
-    defaultBreakDurationMs?: unknown;
-  };
-
-  const items = Array.isArray(parsed.items)
-    ? parsed.items.map(deserializeItem).filter((item): item is TimerItem => item !== null)
-    : [];
+  const parsed = JSON.parse(raw) as StoredTimerStructureV1;
+  if (!parsed || parsed.schemaVersion !== 1) {
+    throw new Error("Unsupported preset schema.");
+  }
 
   const structure: TimerStructure = {
-    id: typeof parsed.id === "string" ? parsed.id : "imported-structure",
-    name:
-      typeof parsed.name === "string"
-        ? parsed.name
-        : typeof parsed.title === "string"
-          ? parsed.title
-          : "Imported Structure",
-    items,
-    defaultLevelDurationSec:
-      typeof parsed.defaultLevelDurationSec === "number"
-        ? parsed.defaultLevelDurationSec
-        : typeof parsed.defaultLevelDurationMs === "number"
-          ? Math.floor(parsed.defaultLevelDurationMs / 1000)
-          : 20 * 60,
-    defaultBreakDurationSec:
-      typeof parsed.defaultBreakDurationSec === "number"
-        ? parsed.defaultBreakDurationSec
-        : typeof parsed.defaultBreakDurationMs === "number"
-          ? Math.floor(parsed.defaultBreakDurationMs / 1000)
-          : 10 * 60,
+    id: parsed.structure.id,
+    name: parsed.structure.name,
+    items: parsed.structure.items.map((item) => {
+      if (item.kind === "break") {
+        return createBreakItem({
+          id: item.id,
+          name: item.name,
+          durationSec: item.durationSec,
+        });
+      }
+
+      return createLevelItem({
+        id: item.id,
+        name: item.name,
+        durationSec: item.durationSec,
+        blindGroups: normalizeBlindGroupsForLevel(item.blindGroups),
+      });
+    }),
+    defaultLevelDurationSec: parsed.structure.defaultLevelDurationSec,
+    defaultBreakDurationSec: parsed.structure.defaultBreakDurationSec,
   };
 
   return assertTimerStructure(structure);

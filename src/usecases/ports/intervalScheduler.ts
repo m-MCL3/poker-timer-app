@@ -1,7 +1,7 @@
-export interface CancelableTask {
-  cancel(): void;
-}
+export type CancelableTask = {
+  cancel: () => void;
+};
 
-export interface IntervalScheduler {
-  start(task: () => void, intervalMs: number): CancelableTask;
-}
+export type IntervalScheduler = {
+  start: (callback: () => void, intervalMs: number) => CancelableTask;
+};
