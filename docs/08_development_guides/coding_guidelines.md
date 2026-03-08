@@ -1,55 +1,40 @@
-# Coding Guidelines
+# コーディングガイドライン
 
-## 1. 基本方針
+## 1. 命名規則
 
-コードを書くときは、まず「どの層の責務か」を判断する。  
-見た目の都合より責務の置き場所を優先する。
+- Domain はポーカー用語を使う
+- UI は表示語を使ってよい
+- データ構造の正式名称は docs に合わせる
 
-## 2. どこに書くべきか
+例
 
 ### Domain
-- 型
-- discriminated union
-- 純粋なデータモデル
+- `sb`
+- `bb`
+- `ante`
+- `TimerStructure`
+- `TimerRuntime`
 
-### Usecase
-- 状態遷移
-- 派生表示情報
-- バリデーション
-- 編集差分適用
+### UI 表示
+- `Bring-in`
+- `Complete`
+- `remainingText`
+- `nextBreakText`
 
-### Infrastructure
-- LocalStorage
-- serialize / deserialize
-- キー命名
-- 永続化フォーマット
+## 2. props 命名
 
-### UI
-- JSX
-- クリックイベント
-- 入力値受け渡し
-- confirm / prompt / alert
-- 画面遷移
+props は Snapshot 名に揃える。  
+UI コンポーネントごとに独自用語を増やしすぎない。
 
-## 3. 命名規則
+## 3. コメント方針
 
-- 構造が item 基準なら `nextItem`, `currentItem` を使う
-- preset は savePreset / loadPreset / renamePreset / deletePreset を優先
-- 表示専用データには Snapshot を使う
-- domain 用語と UI 用語を混ぜない
+- 「何を変更したか」ではなく「そのコードが何を表すか」を書く
+- 一時的な仮実装には TODO / FIXME を残す
+- docs に書くべき設計意図をコードコメントに埋め込みすぎない
 
-## 4. 書いてはいけない例
+## 4. 実装時の判断
 
-- UI で Break 判定から複雑な遷移判断を書く
-- Domain で localStorage を触る
-- Usecase 内で `Date.now()` を呼ぶ
-- Editor が draft を直接 mutation する
-
-## 5. テストしやすい形
-
-関数はなるべく次に寄せる。
-
-- input -> output
-- state + command -> newState
-
-time-sensitive なロジックは現在時刻を明示引数にする。
+- 表示用に整形するなら Snapshot
+- 状態を変えるなら Usecase
+- 純粋な型なら Domain
+- 保存形式なら Infrastructure

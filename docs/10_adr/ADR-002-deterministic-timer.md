@@ -1,23 +1,13 @@
-# ADR-002: Timer を deterministic にする
+# ADR-002 deterministic timer を採用する
 
-## Status
-Accepted
+## 決定
+タイマー進行は epoch ms 基準で整合を取る deterministic timer とする。
 
-## Context
-interval 減算ベースのタイマーは、タブ非アクティブ時や復帰時にずれやすい。
-またテストもしにくい。
-
-## Decision
-TimerUsecase は `nowEpochMs` を引数に取り、現在時刻との差分で状態を再計算する。
-Usecase 内で `Date.now()` は使わない。
-
-## Consequences
-
-### 良い点
+## 理由
+- タブ復帰に強い
+- 描画周期の揺れに依存しない
 - テストしやすい
-- 長時間停止後でも整合が取りやすい
-- 将来同期処理に寄せやすい
+- `tick = 現在時刻に追いつかせる処理` として定義できる
 
-### 悪い点
-- UI が current time を渡す必要がある
-- 初見では少し理解コストがある
+## 結果
+`endsAtEpochMs` を中心に状態更新を設計する。

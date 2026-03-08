@@ -1,35 +1,37 @@
-# TournamentStructure
+# TimerStructure
 
 ## 1. 位置づけ
 
-TournamentStructure は、このアプリにおけるトーナメント構造の唯一の真実である。  
+`TimerStructure` は、このアプリにおけるタイマー構造の唯一の真実である。  
 タイマー構造の正規表現はこれだけとする。
 
-## 2. 構成
+## 2. 定義
 
-TournamentStructure は概ね次を持つ。
-
-- id
-- title
-- items
-- defaultLevelDurationMs
-- defaultBreakDurationMs
+```ts
+export type TimerStructure = {
+  id: string
+  name: string
+  items: TimerItem[]
+  defaultLevelDurationSec: number
+  defaultBreakDurationSec: number
+}
+```
 
 ## 3. items の意味
 
-items は実行順そのものを表す配列である。  
+`items` は実行順そのものを表す配列である。  
 配列順がトーナメント進行順であり、別の順序情報は持たない。
 
 ## 4. なぜ levels[] ではなく items[] なのか
 
 以前の level 中心構造では Break が補助扱いになりやすく、次の問題が生じた。
 
-- Next/Prev で Break が飛ばされる
+- Next / Prev で Break が飛ばされる
 - 表示と遷移単位がずれる
 - Editor と Timer の前提が一致しない
 - 将来 item 種別追加に弱い
 
-そのため、現在は Level / Break をまとめて `items[]` に統一している。
+そのため、現在は Level / Break をまとめて `items[]` に統一する。
 
 ## 5. default durations の役割
 

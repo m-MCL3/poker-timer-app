@@ -1,46 +1,21 @@
-# Change Policy
+# 変更方針
 
-## 1. 変更要求が来たら最初に考えること
+## 1. 基本姿勢
 
-1. これはアプリ仕様の変更か
-2. これはデータ設計の変更か
-3. これはアーキテクチャの変更か
-4. これは UI 表示だけの変更か
+このプロジェクトでは、場当たり的な修正よりも、理想アーキテクチャに寄せる変更を優先する。  
+ただし、一度に全てを変えるのではなく、責務境界を崩さない単位で進める。
 
-この切り分けをしてから変更する。
+## 2. 優先順位
 
-## 2. 変更の入れ方
+1. Domain の語彙と正規形を守る
+2. Usecase に振る舞いを集約する
+3. UI を薄く保つ
+4. Infrastructure の都合を内側へ漏らさない
 
-### item 種別を追加したい
-- `02_domain_design`
-- `04_usecases`
-- `05_ui_design`
-- 必要なら ADR
+## 3. 変更時の確認項目
 
-### Timer 操作を増やしたい
-- `01_application_spec`
-- `04_usecases/timer_usecases.md`
-- `07_timer_engine/timer_engine.md`
-
-### 保存方法を変えたい
-- `06_persistence`
-- `03_architecture`
-
-### 新画面を増やしたい
-- `01_application_spec`
-- `05_ui_design`
-
-## 3. 守るべきこと
-
-- Break を例外扱いに戻さない
-- structure の正規形を増やさない
-- UI にロジックを散らさない
-- 仕様変更時は docs も更新する
-
-## 4. docs 更新ルール
-
-- 仕様が変わった → 01_application_spec
-- 型が変わった → 02_domain_design
-- 責務が変わった → 03_architecture
-- 振る舞いが変わった → 04_usecases / 07_timer_engine
-- 保存が変わった → 06_persistence
+- docs は更新したか
+- naming は既存ルールに揃っているか
+- Structure / Runtime / Snapshot の境界を壊していないか
+- UI が過剰にロジックを持っていないか
+- ADR を追加すべき判断か

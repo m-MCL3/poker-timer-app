@@ -1,39 +1,31 @@
-# Preset Storage
+# Preset 保存設計
 
-## 1. 保存先
+## 1. 保存対象
 
-現時点では LocalStorage を使用する。
+Preset が保存するのは `TimerStructure` である。  
+TimerRuntime や TimerSnapshot は保存対象にしない。
 
-## 2. 保存対象
+## 2. 理由
 
-保存対象は TournamentStructure である。  
-TimerState 全体ではない。
+- Preset の目的は構造の再利用
+- 実行途中状態の復元は別機能
+- Snapshot は再生成可能
+- Runtime は時刻依存であり、保存責務を分けた方が明快
 
-理由
-- preset の本質は構造の再利用
-- 実行中状態は一時的
-- 途中状態まで混ぜると責務が崩れる
+## 3. 保存単位
 
-## 3. キー構造
+- 1 preset = 1 TimerStructure
+- preset 一覧は summary を別で持つか、structure 群から導出する
 
-- `pokerTimer:structures:index`
-- `pokerTimer:structures:{name}`
+## 4. Repository の責務
 
-### index の役割
-保存済み preset 一覧を管理する。  
-現在は `name` と `updatedAtEpochMs` を扱う。
+- 保存
+- 読み込み
+- 改名
+- 削除
+- 一覧取得
 
-## 4. 提供操作
+## 5. Usecase との分担
 
-- listPresets
-- listNames
-- has
-- savePreset
-- loadPreset
-- renamePreset
-- deletePreset
-
-## 5. 保存形式
-
-現在の保存形式を schemaVersion v1 とする。  
-旧構造互換は持たない。
+- repository: 永続化
+- presetUsecase: 名前規約、重複判定、一覧整形

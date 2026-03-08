@@ -1,31 +1,28 @@
-# Schema and Versioning
+# スキーマと versioning
 
-## 1. 現方針
+## 1. version を持つ理由
 
-モック段階では migration を持たず、**現時点の構造を v1 とする**。
-それ以前の互換は切り捨てる。
+タイマー構造は今後拡張される可能性がある。  
+保存形式に version を持たせることで、将来の migration を可能にする。
 
-## 2. この方針を採る理由
+## 2. 保存形式の基本方針
 
-- 仕様が動いている段階で旧互換を持つとノイズになる
-- item 基準設計へ完全に寄せたい
-- 旧モデルが残ると理解の妨げになる
-
-## 3. 現在の形式
-
-```text
-{
-  schemaVersion: 1,
-  structure: TournamentStructure
+```ts
+type PersistedPreset = {
+  version: 1
+  structure: TimerStructure
 }
 ```
 
-## 4. 将来の方針
+## 3. migration の考え方
 
-保存形式を変更する必要が出た場合は、
+- 旧 version を読み込んだら、現 version へ変換する
+- migration は Infrastructure で扱う
+- Domain は旧形式を知らない
 
-- schemaVersion を上げる
-- deserialize で分岐する
-- 必要なら migrate を導入する
+## 4. 今後の拡張候補
 
-ただし、モック段階ではそこまでしない。
+- item 名称追加
+- blindGroups の拡張
+- 設定項目追加
+- metadata 追加

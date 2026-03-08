@@ -1,4 +1,4 @@
-# Dependency Rules
+# 依存規則
 
 ## 1. 原則
 
@@ -22,9 +22,10 @@
 
 ## 4. UI で避けること
 
-- TimerState を直接解釈して高度な遷移判断をすること
+- TimerRuntime を直接解釈して高度な遷移判断をすること
 - Break 表示ルールを独自実装すること
 - current / next 表示文字列を再発明すること
+- timerStore や clock を直接使うこと
 
 ## 5. 実装判断の目安
 

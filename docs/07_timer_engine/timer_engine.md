@@ -1,43 +1,46 @@
-# Timer Engine
+# タイマーエンジン
 
-## 1. 目的
+## 1. 基本方針
 
-タイマーは見た目の更新よりも、**現在時刻から正しい状態を導けること**が重要である。  
-そのため本アプリでは deterministic timer を採用する。
+タイマーは epoch ms を基準として計算する。
 
-## 2. deterministic とは何か
+理由
 
-同じ state と同じ nowEpochMs を入力したとき、常に同じ結果が返ること。  
-Usecase 内で `Date.now()` を直接使わないことで、この性質を保つ。
-
-## 3. 時間計算
-
-### running
-残り時間は `endsAtEpochMs - nowEpochMs` で求める。
-
-### paused
-`pausedRemainingMs` を使う。
-
-### idle
-current item のフル duration を使う。
-
-### finished
-残り時間は 0 とみなす。
-
-## 4. tickTimer の役割
-
-tickTimer は 1秒ごとに値を減算する処理ではない。  
-現在時刻を入力として、その時点の正しい状態に追いつかせる処理である。
-
-## 5. epoch ms 基準の利点
-
-- タブ非アクティブでずれにくい
-- pause / resume の整合が取りやすい
-- 長時間放置後の復帰に強い
+- タブ復帰時の整合性
+- 描画周期に依存しない
 - テストしやすい
-- 将来的な同期処理にも寄せやすい
+- deterministic timer として扱いやすい
 
-## 6. UI 再描画との関係
+## 2. TimerRuntime
 
-UI は一定間隔で nowEpochMs を更新し、その now で snapshot を再計算する。  
-これにより state が変わらなくても残り時間表示を更新できる。
+```ts
+export type TimerRuntime = {
+  status: "idle" | "running" | "paused" | "finished"
+  currentIndex: number
+  startedAtEpochMs: number | null
+  endsAtEpochMs: number | null
+  remainingMsWhenPaused: number | null
+}
+```
+
+## 3. tick の意味
+
+tick は現在時刻を受け取り、その時点の正しい状態へ Runtime を更新する処理である。  
+1 秒ごとに remaining を減算する処理ではない。
+
+## 4. 自動遷移
+
+- running 中に `nowEpochMs >= endsAtEpochMs` になったら次 item へ進む
+- 次 item が存在しなければ finished にする
+- 遷移先は item 配列順に従う
+
+## 5. 手動移動
+
+- `goToNextItem`
+- `goToPreviousItem`
+
+どちらも Level / Break を同列 item として扱う。
+
+## 6. reset
+
+reset は structure を保持したまま、現在 item を先頭に戻して idle にする。

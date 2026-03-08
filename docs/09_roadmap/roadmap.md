@@ -1,30 +1,33 @@
-# Roadmap
+# ロードマップ
 
-本ディレクトリは将来構想を記録する場所であり、確定仕様ではない。
+## 1. 近い順の優先事項
 
-## 候補
+### Phase 1
+- TimerRuntime と TimerSnapshot の確定
+- TimerUsecase の API 固定
+- 次の Break まで表示の安定化
+- docs の整備
 
-- Settings 詳細化
+### Phase 2
+- Editor 仕様の詳細化
+- Preset 保存の強化
+- validation の整理
+
+### Phase 3
+- Settings 画面
 - 音通知
-- structure validation
-- preset export / import
+- export / import
+- PWA 強化
+
+### Phase 4
 - サーバ保存
-- マルチユーザ対応
-- サークル分離
-- ディーラーモード
-- 権限管理
-- トーナメント履歴
-- チップ管理連携
+- 共有
+- 同期
+- 将来的な複数サークル対応
 
-## 原則
+## 2. 未確定事項
 
-将来機能を追加する場合でも、次は維持する。
-
-- item 基準構造
-- deterministic timer
-- Domain の純粋性
-- UI と Usecase の責務分離
-
-## 注意
-
-ここに書いてあっても、`01_application_spec` に昇格していなければ実装対象ではない。
+- Settings の詳細項目
+- Runtime 永続化の要否
+- 通知仕様
+- import / export 形式

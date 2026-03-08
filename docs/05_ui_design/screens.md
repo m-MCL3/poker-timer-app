@@ -1,48 +1,46 @@
-# UI Screens
+# 画面設計
 
-## 1. Timer Page
+## 1. 画面一覧
 
-### 役割
-- 実行中タイマーの表示
-- start / pause / resume の入力
-- next / prev / reset の入力
+- Timer
+- Editor
+- Settings（詳細未確定）
 
-### 表示に必要なもの
-- title
-- current item 番号
-- total item 数
-- current item label
-- remainingMs
+## 2. Timer 画面
+
+表示責務
+
+- 現在 item
+- 残り時間
 - status
-- currentBlindGroups
-- nextItemText
-- showBreakBanner
-- showCurrentBlinds
+- current blindGroups
+- next item
+- 次の Break まで
+- 操作ボタン
 
-### UI が持つべきでない責務
-- Break をどう解釈するか
-- nextItemText をどう生成するか
-- current blinds をどこから取るか
+UI は Snapshot を描画するだけにする。  
+状態計算や次 Break 算出は Usecase 側で行う。
 
-これらは Snapshot 側で解決する。
+## 3. Editor 画面
 
-## 2. Editor Page
+表示責務
 
-### 役割
-- structure 編集
-- Preset 操作
+- item row 一覧
+- row ごとの種別、名称、duration、blindGroups
+- dirty 状態
 - Apply / Cancel
+- Preset 関連操作
 
-### 表示単位
-1 row = 1 item
+Editor は `EditorSnapshot` を描画し、編集指示は operation として Usecase に渡す。
 
-### row が表すもの
-- item 順序
-- item 種別
-- duration
-- blinds 編集欄
-- 削除可否
+## 4. Settings 画面
 
-## 3. Settings Page
+現時点では詳細未確定。  
+音通知、表示設定、デフォルト値などを将来対象とする。
 
-存在は想定しているが、現時点では詳細未確定。
+## 5. UI の共通原則
+
+- UI は Runtime を直接解釈しない
+- UI は timerStore や repository を直接触らない
+- UI は Snapshot / Usecase API に揃える
+- Stud の表記差分は UI 表示時のみ変換する

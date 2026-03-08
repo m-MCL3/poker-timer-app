@@ -1,4 +1,4 @@
-# Preset Usecases
+# PresetUsecase
 
 ## 1. 役割
 
@@ -7,19 +7,16 @@ PresetUsecase は Preset 名まわりの軽量ルールを担当する。
 
 ## 2. 主な関数
 
-### normalizePresetName
-前後空白除去など、比較用の正規化を行う。
-
-### validatePresetName
-空文字などを弾く。
-
-### hasPreset
-一覧内に同名 preset が存在するか確認する。
-
-### buildPresetSummaries
-一覧表示向けの整形や並び替えを行う。
+- `normalizePresetName`
+- `validatePresetName`
+- `hasPreset`
+- `buildPresetSummaries`
 
 ## 3. UI に書かない理由
 
 画面ごとに trim や重複判定がばらつくと整合が崩れるため。  
 Preset 名ルールは Usecase に寄せる。
+
+## 4. 保存対象
+
+Preset が扱う主対象は `TimerStructure` であり、Runtime は対象外とする。

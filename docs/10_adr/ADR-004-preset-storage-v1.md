@@ -1,20 +1,12 @@
-# ADR-004: Preset 保存形式は現時点を v1 とする
+# ADR-004 Preset 保存対象は Structure とする
 
-## Status
-Accepted
+## 決定
+Preset が保存するのは `TimerStructure` であり、Runtime ではない。
 
-## Context
-モック段階で migration を積むと、設計理解のノイズが増える。
+## 理由
+- Preset の目的は構造の再利用
+- 実行途中状態の復元とは別機能
+- Snapshot は再生成可能
 
-## Decision
-現時点の TournamentStructure 保存形式を `schemaVersion: 1` とし、それ以前の互換は持たない。
-
-## Consequences
-
-### 良い点
-- 現行設計に集中できる
-- 古い概念を引きずらない
-
-### 悪い点
-- 過去保存データは読み込めない
-- 本番移行時には versioning 方針の見直しが必要
+## 結果
+preset repository は structure 保存に集中する。
